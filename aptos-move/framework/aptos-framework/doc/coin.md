@@ -2577,7 +2577,7 @@ Deposit the coin balance into the recipient's account and emit an event.
             !coin_store.frozen,
             <a href="../../aptos-stdlib/../move-stdlib/doc/error.md#0x1_error_permission_denied">error::permission_denied</a>(<a href="coin.md#0x1_coin_EFROZEN">EFROZEN</a>),
         );
-        <b>if</b> (std::features::module_event_migration_enabled()) {
+        <b>if</b> (std::features::account_and_coin_module_event_migration_enabled()) {
             <a href="event.md#0x1_event_emit">event::emit</a>(
                 <a href="coin.md#0x1_coin_CoinDeposit">CoinDeposit</a> { coin_type: type_name&lt;CoinType&gt;(), <a href="account.md#0x1_account">account</a>: account_addr, amount: <a href="coin.md#0x1_coin">coin</a>.value }
             );
@@ -3178,7 +3178,7 @@ Withdraw specified <code>amount</code> of coin <code>CoinType</code> from the si
             !coin_store.frozen,
             <a href="../../aptos-stdlib/../move-stdlib/doc/error.md#0x1_error_permission_denied">error::permission_denied</a>(<a href="coin.md#0x1_coin_EFROZEN">EFROZEN</a>),
         );
-        <b>if</b> (std::features::module_event_migration_enabled()) {
+        <b>if</b> (std::features::account_and_coin_module_event_migration_enabled()) {
             <a href="event.md#0x1_event_emit">event::emit</a>(
                 <a href="coin.md#0x1_coin_CoinWithdraw">CoinWithdraw</a> {
                     coin_type: type_name&lt;CoinType&gt;(), <a href="account.md#0x1_account">account</a>: account_addr, amount: coin_amount_to_withdraw

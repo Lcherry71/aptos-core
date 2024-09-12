@@ -132,6 +132,7 @@ pub enum FeatureFlag {
     TransactionSimulationEnhancement,
     CollectionOwner,
     EnableLoaderV2,
+    AccountAndCoinModuleEventMigration,
 }
 
 fn generate_features_blob(writer: &CodeWriter, data: &[u64]) {
@@ -349,6 +350,9 @@ impl From<FeatureFlag> for AptosFeatureFlag {
             },
             FeatureFlag::CollectionOwner => AptosFeatureFlag::COLLECTION_OWNER,
             FeatureFlag::EnableLoaderV2 => AptosFeatureFlag::ENABLE_LOADER_V2,
+            FeatureFlag::AccountAndCoinModuleEventMigration => {
+                AptosFeatureFlag::ACCOUNT_AND_COIN_MODULE_EVENT_MIGRATION
+            },
         }
     }
 }
@@ -493,6 +497,9 @@ impl From<AptosFeatureFlag> for FeatureFlag {
             },
             AptosFeatureFlag::COLLECTION_OWNER => FeatureFlag::CollectionOwner,
             AptosFeatureFlag::ENABLE_LOADER_V2 => FeatureFlag::EnableLoaderV2,
+            AptosFeatureFlag::ACCOUNT_AND_COIN_MODULE_EVENT_MIGRATION => {
+                FeatureFlag::AccountAndCoinModuleEventMigration
+            },
         }
     }
 }

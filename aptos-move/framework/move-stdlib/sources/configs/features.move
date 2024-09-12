@@ -607,6 +607,17 @@ module std::features {
         is_enabled(COLLECTION_OWNER)
     }
 
+    /// Whether aptos_framwork enables the behavior of module event migration for the account and coin modules.
+    ///
+    /// Lifetime: transient
+    const ACCOUNT_AND_COIN_MODULE_EVENT_MIGRATION: u64 = 82;
+
+    public fun get_account_and_coin_module_event_migration_feature(): u64 { ACCOUNT_AND_COIN_MODULE_EVENT_MIGRATION }
+
+    public fun account_and_coin_module_event_migration_enabled(): bool acquires Features {
+        is_enabled(ACCOUNT_AND_COIN_MODULE_EVENT_MIGRATION)
+    }
+
     // ============================================================================================
     // Feature Flag Implementation
 

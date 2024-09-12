@@ -50,7 +50,9 @@ impl InternalIndexerDBService {
             open_internal_indexer_db(db_path_buf.as_path(), &rocksdb_config)
                 .expect("Failed to open internal indexer db"),
         );
-        let internal_indexer_db_config = InternalIndexerDBConfig::new(true, true, true, 10_000);
+
+        let internal_indexer_db_config =
+            InternalIndexerDBConfig::new(true, true, true, true, 10_000);
         Some(InternalIndexerDB::new(arc_db, internal_indexer_db_config))
     }
 
@@ -133,6 +135,19 @@ impl InternalIndexerDBService {
                 .map_or(0, |v| v + 1);
             if start_version != event_start_version {
                 panic!("Cannot start event indexer because the progress doesn't match.");
+            }
+        }
+
+        if node_config.indexer_db_config.enable_event_v2_translation {
+            let event_v2_translation_start_version = self
+                .db_indexer
+                .indexer_db
+                .get_event_v2_translation_version()?
+                .map_or(0, |v| v + 1);
+            if start_version != event_v2_translation_start_version {
+                panic!(
+                    "Cannot start event v2 translation indexer because the progress doesn't match."
+                );
             }
         }
 

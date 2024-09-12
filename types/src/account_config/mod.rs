@@ -5,7 +5,9 @@
 pub mod constants;
 pub mod events;
 pub mod resources;
+pub mod structs;
 
 pub use constants::*;
 pub use events::*;
 pub use resources::*;
+pub use structs::*;

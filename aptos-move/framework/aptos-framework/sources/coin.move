@@ -798,7 +798,7 @@ module aptos_framework::coin {
                 !coin_store.frozen,
                 error::permission_denied(EFROZEN),
             );
-            if (std::features::module_event_migration_enabled()) {
+            if (std::features::account_and_coin_module_event_migration_enabled()) {
                 event::emit(
                     CoinDeposit { coin_type: type_name<CoinType>(), account: account_addr, amount: coin.value }
                 );
@@ -1059,7 +1059,7 @@ module aptos_framework::coin {
                 !coin_store.frozen,
                 error::permission_denied(EFROZEN),
             );
-            if (std::features::module_event_migration_enabled()) {
+            if (std::features::account_and_coin_module_event_migration_enabled()) {
                 event::emit(
                     CoinWithdraw {
                         coin_type: type_name<CoinType>(), account: account_addr, amount: coin_amount_to_withdraw

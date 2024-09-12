@@ -97,6 +97,7 @@ pub enum FeatureFlag {
     TRANSACTION_SIMULATION_ENHANCEMENT = 78,
     COLLECTION_OWNER = 79,
     ENABLE_LOADER_V2 = 81,
+    ACCOUNT_AND_COIN_MODULE_EVENT_MIGRATION = 82,
 }
 
 impl FeatureFlag {
@@ -176,6 +177,7 @@ impl FeatureFlag {
             FeatureFlag::TRANSACTION_SIMULATION_ENHANCEMENT,
             // TODO(loader_v2): Enable V2 loader.
             // FeatureFlag::ENABLE_LOADER_V2,
+            FeatureFlag::ACCOUNT_AND_COIN_MODULE_EVENT_MIGRATION,
         ]
     }
 }

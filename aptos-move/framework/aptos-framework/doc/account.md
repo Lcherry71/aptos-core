@@ -2033,7 +2033,7 @@ in the event of key recovery.
     );
     <a href="../../aptos-stdlib/doc/table.md#0x1_table_add">table::add</a>(address_map, new_auth_key, originating_addr);
 
-    <b>if</b> (std::features::module_event_migration_enabled()) {
+    <b>if</b> (std::features::account_and_coin_module_event_migration_enabled()) {
         <a href="event.md#0x1_event_emit">event::emit</a>(<a href="account.md#0x1_account_KeyRotation">KeyRotation</a> {
             <a href="account.md#0x1_account">account</a>: originating_addr,
             old_authentication_key: account_resource.authentication_key,
@@ -2260,7 +2260,7 @@ Coin management methods.
 
 <pre><code><b>public</b>(<b>friend</b>) <b>fun</b> <a href="account.md#0x1_account_register_coin">register_coin</a>&lt;CoinType&gt;(account_addr: <b>address</b>) <b>acquires</b> <a href="account.md#0x1_account_Account">Account</a> {
     <b>let</b> <a href="account.md#0x1_account">account</a> = <b>borrow_global_mut</b>&lt;<a href="account.md#0x1_account_Account">Account</a>&gt;(account_addr);
-    <b>if</b> (std::features::module_event_migration_enabled()) {
+    <b>if</b> (std::features::account_and_coin_module_event_migration_enabled()) {
         <a href="event.md#0x1_event_emit">event::emit</a>(
             <a href="account.md#0x1_account_CoinRegister">CoinRegister</a> {
                 <a href="account.md#0x1_account">account</a>: account_addr,
