@@ -174,6 +174,46 @@ LiquidityPoolSwap { is_stable: false }	6	0.925	1.001	535.3
             move_len: 10,
             repeats: 1000,
         }),
+        (378, EntryPoints::MapInsertRemove {
+            len: 10,
+            repeats: 0,
+            use_simple_map: false,
+        }),
+        (8184, EntryPoints::MapInsertRemove {
+            len: 10,
+            repeats: 100,
+            use_simple_map: false,
+        }),
+        (6419, EntryPoints::MapInsertRemove {
+            len: 10,
+            repeats: 100,
+            use_simple_map: true,
+        }),
+        (5094, EntryPoints::MapInsertRemove {
+            len: 100,
+            repeats: 0,
+            use_simple_map: false,
+        }),
+        (15838, EntryPoints::MapInsertRemove {
+            len: 100,
+            repeats: 100,
+            use_simple_map: false,
+        }),
+        (30962, EntryPoints::MapInsertRemove {
+            len: 100,
+            repeats: 100,
+            use_simple_map: true,
+        }),
+        (66878, EntryPoints::MapInsertRemove {
+            len: 1000,
+            repeats: 0,
+            use_simple_map: false,
+        }),
+        (79826, EntryPoints::MapInsertRemove {
+            len: 1000,
+            repeats: 100,
+            use_simple_map: false,
+        }),
 ";
 
 struct CalibrationInfo {
@@ -327,6 +367,46 @@ fn main() {
             index: 50,
             move_len: 10,
             repeats: 1000,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 10,
+            repeats: 0,
+            use_simple_map: false,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 10,
+            repeats: 100,
+            use_simple_map: false,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 10,
+            repeats: 100,
+            use_simple_map: true,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 100,
+            repeats: 0,
+            use_simple_map: false,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 100,
+            repeats: 100,
+            use_simple_map: false,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 100,
+            repeats: 100,
+            use_simple_map: true,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 1000,
+            repeats: 0,
+            use_simple_map: false,
+        },
+        EntryPoints::MapInsertRemove {
+            len: 1000,
+            repeats: 100,
+            use_simple_map: false,
         },
     ];
 
