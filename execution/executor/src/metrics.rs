@@ -11,8 +11,7 @@ use aptos_metrics_core::{
 use aptos_types::{
     contract_event::ContractEvent,
     transaction::{
-        authenticator::AccountAuthenticator, signature_verified_transaction::TransactionProvider,
-        ExecutionStatus, Transaction, TransactionOutput, TransactionStatus,
+        authenticator::AccountAuthenticator, signature_verified_transaction::TransactionProvider, ExecutionStatus, Transaction, TransactionOutput, TransactionExecutable, TransactionExtraConfig, TransactionPayloadV2, TransactionStatus
     },
 };
 use aptos_vm::AptosVM;
@@ -473,6 +472,42 @@ pub fn update_counters_for_processed_chunk<T>(
                 aptos_types::transaction::TransactionPayload::ModuleBundle(_) => {
                     PROCESSED_USER_TXNS_BY_PAYLOAD
                         .with_label_values(&[process_type, "deprecated_module_bundle", state])
+                        .inc();
+                },
+
+                aptos_types::transaction::TransactionPayload::V2(
+                    TransactionPayloadV2::V1 { 
+                        executable,
+                        extra_config: TransactionExtraConfig:: V1 {
+                            multisig_address,
+                            replay_protection_nonce,
+                        },
+                    },
+                ) => {
+                    let mut metric_name = String::from("nested");
+                    metric_name += match executable {
+                        TransactionExecutable::EntryFunction(_) => {
+                            "_function"
+                        },
+                        TransactionExecutable::Script(_) => {
+                            "_script"
+                        },
+                        TransactionExecutable::Empty => {
+                            "_empty"
+                        },
+                    };
+                    metric_name += if multisig_address.is_some() {
+                        "_multisig"
+                    } else {
+                        ""
+                    };
+                    metric_name += if replay_protection_nonce.is_some() {
+                        "_orderless"
+                    } else {
+                        ""
+                    };
+                    PROCESSED_USER_TXNS_BY_PAYLOAD
+                        .with_label_values(&[process_type, metric_name.as_str(), state])
                         .inc();
                 },
             }

@@ -55,7 +55,8 @@ spec aptos_framework::transaction_validation {
         use aptos_framework::coin::{CoinStore};
         sender: signer;
         gas_payer: address;
-        txn_sequence_number: u64;
+        txn_sequence_number: Option<u64>;
+        nonce: Option<u64>;
         txn_authentication_key: vector<u8>;
         txn_gas_price: u64;
         txn_max_gas_units: u64;
@@ -100,7 +101,8 @@ spec aptos_framework::transaction_validation {
     spec prologue_common(
     sender: signer,
     gas_payer: address,
-    txn_sequence_number: u64,
+    txn_sequence_number: Option<u64>,
+    nonce: Option<u64>,
     txn_authentication_key: vector<u8>,
     txn_gas_price: u64,
     txn_max_gas_units: u64,

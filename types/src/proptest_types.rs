@@ -23,10 +23,7 @@ use crate::{
     proof::TransactionInfoListWithProof,
     state_store::{state_key::StateKey, state_value::StateValue},
     transaction::{
-        block_epilogue::BlockEndInfo, ChangeSet, ExecutionStatus, Module, RawTransaction, Script,
-        SignatureCheckedTransaction, SignedTransaction, Transaction, TransactionArgument,
-        TransactionAuxiliaryData, TransactionInfo, TransactionListWithProof, TransactionPayload,
-        TransactionStatus, TransactionToCommit, Version, WriteSetPayload,
+        block_epilogue::BlockEndInfo, ChangeSet, EntryFunction, ExecutionStatus, Module, RawTransaction, ReplayProtector, Script, SignatureCheckedTransaction, SignedTransaction, Transaction, TransactionArgument, TransactionAuxiliaryData, TransactionInfo, TransactionListWithProof, TransactionPayload, TransactionExecutable, TransactionStatus, TransactionToCommit, Version, WriteSetPayload
     },
     validator_info::ValidatorInfo,
     validator_signer::ValidatorSigner,
@@ -299,6 +296,7 @@ pub struct RawTransactionGen {
     max_gas_amount: u64,
     gas_unit_price: u64,
     expiration_time_secs: u64,
+    nonce: Option<u64>,
 }
 
 impl RawTransactionGen {
@@ -308,18 +306,37 @@ impl RawTransactionGen {
         universe: &mut AccountInfoUniverse,
     ) -> RawTransaction {
         let sender_info = universe.get_account_info_mut(sender_index);
-
-        let sequence_number = sender_info.sequence_number;
-        sender_info.sequence_number += 1;
-
+        let replay_protector = match self.nonce {
+            Some(nonce) => {
+                ReplayProtector::Nonce(nonce)
+            }
+            None => {
+                let sequence_number = sender_info.sequence_number;
+                sender_info.sequence_number += 1;
+                ReplayProtector::SequenceNumber(sequence_number)
+            },
+        };
         new_raw_transaction(
             sender_info.address,
-            sequence_number,
+            replay_protector,
             self.payload,
             self.max_gas_amount,
             self.gas_unit_price,
             self.expiration_time_secs,
         )
+    }
+}
+
+impl Arbitrary for ReplayProtector {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            any::<u64>().prop_map(ReplayProtector::SequenceNumber),
+            any::<u64>().prop_map(ReplayProtector::Nonce),
+        ]
+        .boxed()
     }
 }
 
@@ -331,7 +348,7 @@ impl RawTransaction {
         // XXX what other constraints do these need to obey?
         (
             address_strategy,
-            any::<u64>(),
+            any::<ReplayProtector>(),
             payload_strategy,
             any::<u64>(),
             any::<u64>(),
@@ -340,7 +357,7 @@ impl RawTransaction {
             .prop_map(
                 |(
                     sender,
-                    sequence_number,
+                    replay_protector,
                     payload,
                     max_gas_amount,
                     gas_unit_price,
@@ -348,7 +365,7 @@ impl RawTransaction {
                 )| {
                     new_raw_transaction(
                         sender,
-                        sequence_number,
+                        replay_protector,
                         payload,
                         max_gas_amount,
                         gas_unit_price,
@@ -361,7 +378,7 @@ impl RawTransaction {
 
 fn new_raw_transaction(
     sender: AccountAddress,
-    sequence_number: u64,
+    replay_protector: ReplayProtector,
     payload: TransactionPayload,
     max_gas_amount: u64,
     gas_unit_price: u64,
@@ -374,7 +391,7 @@ fn new_raw_transaction(
         },
         TransactionPayload::Script(script) => RawTransaction::new_script(
             sender,
-            sequence_number,
+            0,
             script,
             max_gas_amount,
             gas_unit_price,
@@ -383,7 +400,7 @@ fn new_raw_transaction(
         ),
         TransactionPayload::EntryFunction(script_fn) => RawTransaction::new_entry_function(
             sender,
-            sequence_number,
+            0,
             script_fn,
             max_gas_amount,
             gas_unit_price,
@@ -392,13 +409,14 @@ fn new_raw_transaction(
         ),
         TransactionPayload::Multisig(multisig) => RawTransaction::new_multisig(
             sender,
-            sequence_number,
+            0,
             multisig,
             max_gas_amount,
             gas_unit_price,
             expiration_time_secs,
             chain_id,
         ),
+        _ => unimplemented!(),
     }
 }
 
@@ -491,6 +509,20 @@ impl Arbitrary for SignedTransaction {
     }
 }
 
+#[cfg(ignore_errors)]
+impl Arbitrary for TransactionExecutable {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: ()) -> Self::Strategy {
+        prop_oneof![
+            any::<Script>().prop_map(TransactionExecutable::Script),
+            any::<EntryFunction>().prop_map(TransactionExecutable::EntryFunction),
+        ]
+        .boxed()
+    }
+}
+
 impl TransactionPayload {
     pub fn script_strategy() -> impl Strategy<Value = Self> {
         any::<Script>().prop_map(TransactionPayload::Script)
@@ -544,6 +576,23 @@ impl Arbitrary for Script {
             vec(any::<TransactionArgument>(), 0..10),
         )
             .prop_map(|(code, ty_args, args)| Script::new(code, ty_args, args))
+            .boxed()
+    }
+}
+
+#[cfg(ignore_errors)]
+impl Arbitrary for EntryFunction {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: ()) -> Self::Strategy {
+        // XXX This should eventually be an actually valid program, maybe?
+        // The vector sizes are picked out of thin air.
+        (
+            vec(any::<TypeTag>(), 0..4),
+            vec(any::<TransactionArgument>(), 0..10),
+        )
+            .prop_map(|(func, ty_args, args)| EntryFunction::new(module, function, ty_args, args))
             .boxed()
     }
 }

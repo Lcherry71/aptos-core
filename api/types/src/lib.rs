@@ -53,7 +53,7 @@ pub use transaction::{
     ScriptWriteSet, Signature, SingleKeySignature, SubmitTransactionRequest, Transaction,
     TransactionData, TransactionId, TransactionInfo, TransactionOnChainData, TransactionPayload,
     TransactionSignature, TransactionSigningMessage, TransactionsBatchSingleSubmissionFailure,
-    TransactionsBatchSubmissionResult, UserCreateSigningMessageRequest, UserTransaction,
+    TransactionsBatchSubmissionResult, UserTransaction,
     UserTransactionRequest, VersionedEvent, WriteModule, WriteResource, WriteSet, WriteSetChange,
     WriteSetPayload, WriteTableItem,
 };

@@ -3,16 +3,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// This module provides various indexes used by Mempool.
-use crate::core_mempool::transaction::{MempoolTransaction, SequenceInfo, TimelineState};
 use crate::{
-    counters,
-    logging::{LogEntry, LogSchema},
+    core_mempool::transaction::{MempoolTransaction, TimelineState},
     shared_mempool::types::{MultiBucketTimelineIndexIds, TimelineIndexIdentifier},
 };
 use aptos_consensus_types::common::TransactionSummary;
 use aptos_crypto::HashValue;
 use aptos_logger::prelude::*;
-use aptos_types::account_address::AccountAddress;
+use aptos_types::{account_address::AccountAddress, transaction::ReplayProtector};
 use rand::seq::SliceRandom;
 use std::{
     cmp::Ordering,
@@ -23,7 +21,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-pub type AccountTransactions = BTreeMap<u64, MempoolTransaction>;
+pub type AccountTransactions = BTreeMap<ReplayProtector, MempoolTransaction>;
 
 /// PriorityIndex represents the main Priority Queue in Mempool.
 /// It's used to form the transaction block for Consensus.
@@ -62,7 +60,7 @@ impl PriorityIndex {
             expiration_time: txn.expiration_time,
             insertion_time: txn.insertion_info.insertion_time,
             address: txn.get_sender(),
-            sequence_number: txn.sequence_info,
+            replay_protector: txn.sequence_info.transaction_replay_protector,
             hash: txn.get_committed_hash(),
         }
     }
@@ -82,7 +80,7 @@ pub struct OrderedQueueKey {
     pub expiration_time: Duration,
     pub insertion_time: SystemTime,
     pub address: AccountAddress,
-    pub sequence_number: SequenceInfo,
+    pub replay_protector: ReplayProtector,
     pub hash: HashValue,
 }
 
@@ -106,12 +104,9 @@ impl Ord for OrderedQueueKey {
             Ordering::Equal => {},
             ordering => return ordering,
         }
-        match self
-            .sequence_number
-            .transaction_sequence_number
-            .cmp(&other.sequence_number.transaction_sequence_number)
-            .reverse()
-        {
+        // Question: Orderless transactions with Nonce are always prioritize over regular sequence number transactions.
+        // Is it okay?
+        match self.replay_protector.cmp(&other.replay_protector) {
             Ordering::Equal => {},
             ordering => return ordering,
         }
@@ -153,7 +148,8 @@ impl TTLIndex {
         let ttl_key = TTLOrderingKey {
             expiration_time: now,
             address: AccountAddress::ZERO,
-            sequence_number: 0,
+            // TODO: Check how the comparision works between sequence numbers and nonces work
+            replay_protector: ReplayProtector::SequenceNumber(0),
         };
 
         let mut active = self.data.split_off(&ttl_key);
@@ -167,7 +163,7 @@ impl TTLIndex {
         TTLOrderingKey {
             expiration_time: (self.get_expiration_time)(txn),
             address: txn.get_sender(),
-            sequence_number: txn.sequence_info.transaction_sequence_number,
+            replay_protector: txn.sequence_info.transaction_replay_protector,
         }
     }
 
@@ -185,7 +181,7 @@ impl TTLIndex {
 pub struct TTLOrderingKey {
     pub expiration_time: Duration,
     pub address: AccountAddress,
-    pub sequence_number: u64,
+    pub replay_protector: ReplayProtector,
 }
 
 /// Be very careful with this, to not break the partial ordering.
@@ -195,7 +191,10 @@ impl Ord for TTLOrderingKey {
     fn cmp(&self, other: &TTLOrderingKey) -> Ordering {
         match self.expiration_time.cmp(&other.expiration_time) {
             Ordering::Equal => {
-                (&self.address, self.sequence_number).cmp(&(&other.address, other.sequence_number))
+                match self.address.cmp(&other.address) {
+                    Ordering::Equal => self.replay_protector.cmp(&other.replay_protector),
+                    ordering => ordering,
+                }
             },
             ordering => ordering,
         }
@@ -206,12 +205,12 @@ impl Ord for TTLOrderingKey {
 /// We only add a transaction to the index if it has a chance to be included in the next consensus
 /// block (which means its status is != NotReady or its sequential to another "ready" transaction).
 ///
-/// It's represented as Map <timeline_id, (Address, sequence_number)>, where timeline_id is auto
-/// increment unique id of "ready" transaction in local Mempool. (Address, sequence_number) is a
+/// It's represented as Map <timeline_id, (Address, Replay Protector)>, where timeline_id is auto
+/// increment unique id of "ready" transaction in local Mempool. (Address, Replay Protector) is a
 /// logical reference to transaction content in main storage.
 pub struct TimelineIndex {
     timeline_id: u64,
-    timeline: BTreeMap<u64, (AccountAddress, u64, Instant)>,
+    timeline: BTreeMap<u64, (AccountAddress, ReplayProtector, Instant)>,
 }
 
 impl TimelineIndex {
@@ -230,9 +229,9 @@ impl TimelineIndex {
         timeline_id: u64,
         count: usize,
         before: Option<Instant>,
-    ) -> Vec<(AccountAddress, u64)> {
+    ) -> Vec<(AccountAddress, ReplayProtector)> {
         let mut batch = vec![];
-        for (_id, &(address, sequence_number, insertion_time)) in self
+        for (_id, &(address, replay_protector, insertion_time)) in self
             .timeline
             .range((Bound::Excluded(timeline_id), Bound::Unbounded))
         {
@@ -244,7 +243,7 @@ impl TimelineIndex {
             if batch.len() == count {
                 break;
             }
-            batch.push((address, sequence_number));
+            batch.push((address, replay_protector));
         }
         batch
     }
@@ -253,7 +252,7 @@ impl TimelineIndex {
     pub(crate) fn timeline_range(&self, start_id: u64, end_id: u64) -> Vec<(AccountAddress, u64)> {
         self.timeline
             .range((Bound::Excluded(start_id), Bound::Included(end_id)))
-            .map(|(_idx, &(address, sequence, _))| (address, sequence))
+            .map(|(_idx, &(address, replay_protector, _))| (address, replay_protector))
             .collect()
     }
 
@@ -262,7 +261,7 @@ impl TimelineIndex {
             self.timeline_id,
             (
                 txn.get_sender(),
-                txn.sequence_info.transaction_sequence_number,
+                txn.sequence_info.transaction_replay_protector,
                 Instant::now(),
             ),
         );
@@ -413,105 +412,79 @@ impl MultiBucketTimelineIndex {
 /// can't be included in the next block because their sequence number is too high.
 /// We keep a separate index to be able to efficiently evict them when Mempool is full.
 pub struct ParkingLotIndex {
-    // DS invariants:
-    // 1. for each entry (account, txns) in `data`, `txns` is never empty
-    // 2. for all accounts, data.get(account_indices.get(`account`)) == (account, sequence numbers of account's txns)
-    data: Vec<(AccountAddress, BTreeSet<(u64, HashValue)>)>,
-    account_indices: HashMap<AccountAddress, usize>,
-    size: usize,
+    data: HashMap<AccountAddress, BTreeSet<(u64, HashValue)>>,
 }
 
 impl ParkingLotIndex {
     pub(crate) fn new() -> Self {
         Self {
-            data: vec![],
-            account_indices: HashMap::new(),
-            size: 0,
+            data: HashMap::new(),
         }
     }
 
     pub(crate) fn insert(&mut self, txn: &mut MempoolTransaction) {
-        if txn.insertion_info.park_time.is_none() {
-            txn.insertion_info.park_time = Some(SystemTime::now());
-        }
-        txn.was_parked = true;
-
-        let sender = &txn.txn.sender();
-        let sequence_number = txn.txn.sequence_number();
-        let hash = txn.get_committed_hash();
-        let is_new_entry = match self.account_indices.get(sender) {
-            Some(index) => {
-                if let Some((_account, seq_nums)) = self.data.get_mut(*index) {
-                    seq_nums.insert((sequence_number, hash))
-                } else {
-                    counters::CORE_MEMPOOL_INVARIANT_VIOLATION_COUNT.inc();
-                    error!(
-                        LogSchema::new(LogEntry::InvariantViolated),
-                        "Parking lot invariant violated: for account {}, account index exists but missing entry in data",
-                        sender
-                    );
-                    return;
+        // Orderless transactions are always in the "ready" state and are not stored in the parking lot.
+        match txn.sequence_info.transaction_replay_protector {
+            ReplayProtector::SequenceNumber(sequence_num) => {
+                if txn.insertion_info.park_time.is_none() {
+                    txn.insertion_info.park_time = Some(SystemTime::now());
                 }
-            },
-            None => {
-                let entry = [(sequence_number, hash)]
-                    .iter()
-                    .cloned()
-                    .collect::<BTreeSet<_>>();
-                self.data.push((*sender, entry));
-                self.account_indices.insert(*sender, self.data.len() - 1);
-                true
-            },
-        };
-        if is_new_entry {
-            self.size += 1;
+                txn.was_parked = true;
+        
+                self.data
+                    .entry(txn.txn.sender())
+                    .or_default()
+                    .insert((sequence_num, txn.get_committed_hash()));
+            }
+            ReplayProtector::Nonce(_) => {}
         }
     }
 
     pub(crate) fn remove(&mut self, txn: &MempoolTransaction) {
-        let sender = &txn.txn.sender();
-        if let Some(index) = self.account_indices.get(sender).cloned() {
-            if let Some((_account, txns)) = self.data.get_mut(index) {
-                if txns.remove(&(txn.txn.sequence_number(), txn.get_committed_hash())) {
-                    self.size -= 1;
-                }
+        // Orderless transactions are always in the "ready" state and are not stored in the parking lot.
+        match txn.sequence_info.transaction_replay_protector {
+            ReplayProtector::SequenceNumber(sequence_num) => {
+                let sender = &txn.txn.sender();
+                if let Some(txns) = self.data.get_mut(sender) {
+                    txns.remove(&(txn.txn.sequence_number(), txn.get_committed_hash()));
 
-                // maintain DS invariant
-                if txns.is_empty() {
-                    // remove account with no more txns
-                    self.data.swap_remove(index);
-                    self.account_indices.remove(sender);
-
-                    // update DS for account that was swapped in `swap_remove`
-                    if let Some((swapped_account, _)) = self.data.get(index) {
-                        self.account_indices.insert(*swapped_account, index);
+                    if txns.is_empty() {
+                        self.data.remove(sender);
                     }
                 }
             }
+            ReplayProtector::Nonce(_) => {}
         }
     }
 
-    pub(crate) fn contains(&self, account: &AccountAddress, seq_num: u64, hash: HashValue) -> bool {
-        self.account_indices
-            .get(account)
-            .and_then(|idx| self.data.get(*idx))
-            .map_or(false, |(_account, txns)| txns.contains(&(seq_num, hash)))
+    pub(crate) fn contains(&self, account: &AccountAddress, replay_protector: ReplayProtector, hash: HashValue) -> bool {
+        // Orderless transactions are always in the "ready" state and are not stored in the parking lot.
+        match replay_protector {
+            ReplayProtector::SequenceNumber(seq_num) => {
+                self.data
+                    .get(account)
+                    .map_or(false, |txns| txns.contains(&(seq_num, hash)))
+            }
+            ReplayProtector::Nonce(_) => false,
+        }
     }
 
     /// Returns a random "non-ready" transaction (with highest sequence number for that account).
     pub(crate) fn get_poppable(&self) -> Option<TxnPointer> {
         let mut rng = rand::thread_rng();
-        self.data.choose(&mut rng).and_then(|(sender, txns)| {
+        let addresses = self.data.keys().collect::<Vec<_>>();
+        let sender = addresses.choose(&mut rng)?;
+        self.data.get(sender).and_then(|txns| {
             txns.iter().next_back().map(|(seq_num, hash)| TxnPointer {
-                sender: *sender,
-                sequence_number: *seq_num,
+                sender: **sender,
+                replay_protector: ReplayProtector::SequenceNumber(*seq_num),
                 hash: *hash,
             })
         })
     }
 
     pub(crate) fn size(&self) -> usize {
-        self.size
+        self.data.len()
     }
 
     pub(crate) fn get_addresses(&self) -> Vec<(AccountAddress, u64)> {
@@ -530,7 +503,7 @@ impl From<&MempoolTransaction> for TxnPointer {
     fn from(txn: &MempoolTransaction) -> Self {
         Self {
             sender: txn.get_sender(),
-            sequence_number: txn.sequence_info.transaction_sequence_number,
+            replay_protector: txn.sequence_info.transaction_replay_protector,
             hash: txn.get_committed_hash(),
         }
     }
@@ -540,7 +513,7 @@ impl From<&OrderedQueueKey> for TxnPointer {
     fn from(key: &OrderedQueueKey) -> Self {
         Self {
             sender: key.address,
-            sequence_number: key.sequence_number.transaction_sequence_number,
+            replay_protector: key.replay_protector,
             hash: key.hash,
         }
     }

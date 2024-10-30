@@ -24,7 +24,7 @@ use aptos_logger::{prelude::*, Level};
 use aptos_types::{
     account_address::AccountAddress,
     mempool_status::{MempoolStatus, MempoolStatusCode},
-    transaction::SignedTransaction,
+    transaction::{ReplayProtector, SignedTransaction},
 };
 use std::{
     cmp::max,
@@ -33,6 +33,8 @@ use std::{
     ops::Bound,
     time::{Duration, Instant, SystemTime},
 };
+
+use super::AccountSequenceNumberInfo;
 
 /// Estimated per-txn overhead of indexes. Needs to be updated if additional indexes are added.
 pub const TXN_INDEX_ESTIMATED_BYTES: usize = size_of::<crate::core_mempool::index::OrderedQueueKey>() // priority_index
@@ -53,7 +55,7 @@ pub struct TransactionStore {
     transactions: HashMap<AccountAddress, AccountTransactions>,
 
     // Sequence numbers for accounts with transactions
-    sequence_numbers: HashMap<AccountAddress, u64>,
+    account_sequence_numbers: HashMap<AccountAddress, u64>,
 
     // indexes
     priority_index: PriorityIndex,
@@ -72,11 +74,11 @@ pub struct TransactionStore {
     // keeps track of "non-ready" txns (transactions that can't be included in next block)
     parking_lot_index: ParkingLotIndex,
     // Index for looking up transaction by hash.
-    // Transactions are stored by AccountAddress + sequence number.
-    // This index stores map of transaction committed hash to (AccountAddress, sequence number) pair.
+    // Transactions are stored by AccountAddress + replay protector.
+    // This index stores map of transaction committed hash to (AccountAddress, replay protector) pair.
     // Using transaction commited hash because from end user's point view, a transaction should only have
     // one valid hash.
-    hash_index: HashMap<HashValue, (AccountAddress, u64)>,
+    hash_index: HashMap<HashValue, (AccountAddress, ReplayProtector)>,
     // estimated size in bytes
     size_bytes: usize,
 
@@ -103,7 +105,7 @@ impl TransactionStore {
         Self {
             // main DS
             transactions: HashMap::new(),
-            sequence_numbers: HashMap::new(),
+            account_sequence_numbers: HashMap::new(),
 
             // various indexes
             system_ttl_index: TTLIndex::new(Box::new(|t: &MempoolTransaction| t.expiration_time)),
@@ -134,32 +136,32 @@ impl TransactionStore {
     fn get_mempool_txn(
         &self,
         address: &AccountAddress,
-        sequence_number: u64,
+        replay_protector: ReplayProtector,
     ) -> Option<&MempoolTransaction> {
         self.transactions
             .get(address)
-            .and_then(|txns| txns.get(&sequence_number))
+            .and_then(|txns| txns.get(&replay_protector))
     }
 
-    /// Fetch transaction by account address + sequence_number.
+    /// Fetch transaction by account address + replay_protector.
     pub(crate) fn get(
         &self,
         address: &AccountAddress,
-        sequence_number: u64,
+        replay_protector: ReplayProtector,
     ) -> Option<SignedTransaction> {
-        if let Some(txn) = self.get_mempool_txn(address, sequence_number) {
+        if let Some(txn) = self.get_mempool_txn(address, replay_protector) {
             return Some(txn.txn.clone());
         }
         None
     }
 
-    /// Fetch transaction by account address + sequence_number, including ranking score
+    /// Fetch transaction by account address + replay_protector, including ranking score
     pub(crate) fn get_with_ranking_score(
         &self,
         address: &AccountAddress,
-        sequence_number: u64,
+        replay_protector: ReplayProtector,
     ) -> Option<(SignedTransaction, u64)> {
-        if let Some(txn) = self.get_mempool_txn(address, sequence_number) {
+        if let Some(txn) = self.get_mempool_txn(address, replay_protector) {
             return Some((txn.txn.clone(), txn.ranking_score));
         }
         None
@@ -167,7 +169,7 @@ impl TransactionStore {
 
     pub(crate) fn get_by_hash(&self, hash: HashValue) -> Option<SignedTransaction> {
         match self.hash_index.get(&hash) {
-            Some((address, seq)) => self.get(address, *seq),
+            Some((address, replay_protector)) => self.get(address, *replay_protector),
             None => None,
         }
     }
@@ -175,9 +177,9 @@ impl TransactionStore {
     pub(crate) fn get_insertion_info_and_bucket(
         &self,
         address: &AccountAddress,
-        sequence_number: u64,
+        replay_protector: ReplayProtector,
     ) -> Option<(&InsertionInfo, String, String)> {
-        if let Some(txn) = self.get_mempool_txn(address, sequence_number) {
+        if let Some(txn) = self.get_mempool_txn(address, replay_protector) {
             return Some((
                 &txn.insertion_info,
                 self.get_bucket(txn.ranking_score, address),
@@ -192,9 +194,9 @@ impl TransactionStore {
     pub(crate) fn get_ranking_score(
         &self,
         address: &AccountAddress,
-        sequence_number: u64,
+        replay_protector: ReplayProtector,
     ) -> Option<u64> {
-        if let Some(txn) = self.get_mempool_txn(address, sequence_number) {
+        if let Some(txn) = self.get_mempool_txn(address, replay_protector) {
             return Some(txn.ranking_score);
         }
         None
@@ -212,8 +214,8 @@ impl TransactionStore {
         format!("{}_{}", sender_bucket, bucket)
     }
 
-    pub(crate) fn get_sequence_number(&self, address: &AccountAddress) -> Option<&u64> {
-        self.sequence_numbers.get(address)
+    pub(crate) fn get_account_sequence_number(&self, address: &AccountAddress) -> Option<&u64> {
+        self.account_sequence_numbers.get(address)
     }
 
     pub(crate) fn num_sender_buckets(&self) -> MempoolSenderBucket {
@@ -223,8 +225,8 @@ impl TransactionStore {
     /// Insert transaction into TransactionStore. Performs validation checks and updates indexes.
     pub(crate) fn insert(&mut self, txn: MempoolTransaction) -> MempoolStatus {
         let address = txn.get_sender();
-        let txn_seq_num = txn.sequence_info.transaction_sequence_number;
-        let acc_seq_num = txn.sequence_info.account_sequence_number;
+        let txn_replay_protector = txn.sequence_info.transaction_replay_protector;
+        let account_sequence_number = txn.sequence_info.account_sequence_number;
 
         // If the transaction is already in Mempool, we only allow the user to
         // increase the gas unit price to speed up a transaction, but not the max gas.
@@ -232,7 +234,7 @@ impl TransactionStore {
         // Transactions with all the same inputs (but possibly signed differently) are idempotent
         // since the raw transaction is the same
         if let Some(txns) = self.transactions.get_mut(&address) {
-            if let Some(current_version) = txns.get_mut(&txn_seq_num) {
+            if let Some(current_version) = txns.get_mut(&txn_replay_protector) {
                 if current_version.txn.payload() != txn.txn.payload() {
                     return MempoolStatus::new(MempoolStatusCode::InvalidUpdate).with_message(
                         "Transaction already in mempool with a different payload".to_string(),
@@ -251,7 +253,7 @@ impl TransactionStore {
                     );
                 } else if current_version.get_gas_price() < txn.get_gas_price() {
                     // Update txn if gas unit price is a larger value than before
-                    if let Some(txn) = txns.remove(&txn_seq_num) {
+                    if let Some(txn) = txns.remove(&txn_replay_protector) {
                         self.index_remove(&txn);
                     };
                     counters::CORE_MEMPOOL_GAS_UPGRADED_TXNS.inc();
@@ -276,7 +278,9 @@ impl TransactionStore {
             ));
         }
 
-        self.clean_committed_transactions(&address, acc_seq_num);
+        if let AccountSequenceNumberInfo::Required(acc_seq_num) = account_sequence_number {
+            self.clean_committed_transactions_below_seq_num(&address, acc_seq_num);
+        }
 
         self.transactions.entry(address).or_default();
 
@@ -296,13 +300,17 @@ impl TransactionStore {
             self.system_ttl_index.insert(&txn);
             self.expiration_time_index.insert(&txn);
             self.hash_index
-                .insert(txn.get_committed_hash(), (txn.get_sender(), txn_seq_num));
-            self.sequence_numbers.insert(txn.get_sender(), acc_seq_num);
+                .insert(txn.get_committed_hash(), (txn.get_sender(), txn_replay_protector));
+            if let AccountSequenceNumberInfo::Required(acc_seq_num) = account_sequence_number {
+                self.account_sequence_numbers.insert(txn.get_sender(), acc_seq_num);
+            }
             self.size_bytes += txn.get_estimated_bytes();
-            txns.insert(txn_seq_num, txn);
+            txns.insert(txn_replay_protector, txn);
             self.track_indices();
         }
-        self.process_ready_transactions(&address, acc_seq_num);
+        if let AccountSequenceNumberInfo::Required(acc_seq_num) = account_sequence_number {
+            self.process_ready_transactions(&address, acc_seq_num);
+        }
         MempoolStatus::new(MempoolStatusCode::Accepted)
     }
 
@@ -370,7 +378,7 @@ impl TransactionStore {
                     debug!(
                         LogSchema::new(LogEntry::MempoolFullEvictedTxn).txns(TxnsLog::new_txn(
                             txn.get_sender(),
-                            txn.sequence_info.transaction_sequence_number
+                            txn.sequence_info.transaction_replay_protector
                         ))
                     );
                     evicted_bytes += txn.get_estimated_bytes() as u64;
@@ -547,12 +555,13 @@ impl TransactionStore {
         }
     }
 
-    fn clean_committed_transactions(&mut self, address: &AccountAddress, sequence_number: u64) {
+    fn clean_committed_transactions_below_seq_num(&mut self, address: &AccountAddress, sequence_number: u64) {
         // Remove all previous seq number transactions for this account.
         // This can happen if transactions are sent to multiple nodes and one of the
         // nodes has sent the transaction to consensus but this node still has the
         // transaction sitting in mempool.
         if let Some(txns) = self.transactions.get_mut(address) {
+            // TODO: Make sure this only cleans up only regular transactions and not orderless transactions.
             let mut active = txns.split_off(&sequence_number);
             let txns_for_removal = txns.clone();
             txns.clear();
@@ -565,7 +574,7 @@ impl TransactionStore {
             for transaction in txns_for_removal.values() {
                 rm_txns.add(
                     transaction.get_sender(),
-                    transaction.sequence_info.transaction_sequence_number,
+                    transaction.sequence_info.transaction_replay_protector,
                 );
                 self.index_remove(transaction);
             }
@@ -581,29 +590,49 @@ impl TransactionStore {
     /// Handles transaction commit.
     /// It includes deletion of all transactions with sequence number <= `account_sequence_number`
     /// and potential promotion of sequential txns to PriorityIndex/TimelineIndex.
-    pub fn commit_transaction(&mut self, account: &AccountAddress, sequence_number: u64) {
-        let current_seq_number = self.get_sequence_number(account).map_or(0, |v| *v);
-        let new_seq_number = max(current_seq_number, sequence_number + 1);
-        self.sequence_numbers.insert(*account, new_seq_number);
-        self.clean_committed_transactions(account, new_seq_number);
-        self.process_ready_transactions(account, new_seq_number);
+    pub fn commit_transaction(&mut self, account: &AccountAddress, replay_protector: ReplayProtector) {
+        match replay_protector {
+            ReplayProtector::SequenceNumber(txn_sequence_number) => {
+                let current_account_seq_number = self.get_account_sequence_number(account).map_or(0, |v| *v);
+                let new_account_seq_number = max(current_account_seq_number, txn_sequence_number + 1);
+                self.account_sequence_numbers.insert(*account, new_account_seq_number);
+                self.clean_committed_transactions_below_seq_num(account, new_account_seq_number);
+                self.process_ready_transactions(account, new_account_seq_number);
+            },
+            ReplayProtector::Nonce(nonce) => {
+                if let Some(txns) = self.transactions.get_mut(account) {
+                    if let Some(txn) = txns.remove(&ReplayProtector::Nonce(nonce)) {
+                        self.index_remove(&txn);
+                        trace!(
+                            LogSchema::new(LogEntry::CleanCommittedTxn).txns(TxnsLog::new_txn(
+                                txn.get_sender(),
+                                txn.sequence_info.transaction_replay_protector
+                            )),
+                            "txns cleaned with committing tx {}:{:?}",
+                            txn.get_sender(),
+                            txn.sequence_info.transaction_replay_protector
+                        );
+                    }
+                }
+            }
+        }
     }
 
     pub fn reject_transaction(
         &mut self,
         account: &AccountAddress,
-        sequence_number: u64,
+        replay_protector: ReplayProtector,
         hash: &HashValue,
     ) {
         let mut txn_to_remove = None;
-        if let Some((indexed_account, indexed_sequence_number)) = self.hash_index.get(hash) {
-            if account == indexed_account && sequence_number == *indexed_sequence_number {
-                txn_to_remove = self.get_mempool_txn(account, sequence_number).cloned();
+        if let Some((indexed_account, indexed_replay_protector)) = self.hash_index.get(hash) {
+            if account == indexed_account && replay_protector == *indexed_replay_protector {
+                txn_to_remove = self.get_mempool_txn(account, replay_protector).cloned();
             }
         }
         if let Some(txn_to_remove) = txn_to_remove {
             if let Some(txns) = self.transactions.get_mut(account) {
-                txns.remove(&sequence_number);
+                txns.remove(&replay_protector);
             }
             self.index_remove(&txn_to_remove);
 
@@ -611,7 +640,7 @@ impl TransactionStore {
                 let mut txns_log = TxnsLog::new();
                 txns_log.add(
                     txn_to_remove.get_sender(),
-                    txn_to_remove.sequence_info.transaction_sequence_number,
+                    txn_to_remove.sequence_info.transaction_replay_protector,
                 );
                 trace!(LogSchema::new(LogEntry::CleanRejectedTxn).txns(txns_log));
             }
@@ -643,7 +672,7 @@ impl TransactionStore {
         if let Some(txns) = self.transactions.get(address) {
             if txns.is_empty() {
                 self.transactions.remove(address);
-                self.sequence_numbers.remove(address);
+                self.account_sequence_numbers.remove(address);
             }
         }
 

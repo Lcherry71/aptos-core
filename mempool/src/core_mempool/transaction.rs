@@ -4,7 +4,7 @@
 
 use crate::{core_mempool::TXN_INDEX_ESTIMATED_BYTES, counters, network::BroadcastPeerPriority};
 use aptos_crypto::HashValue;
-use aptos_types::{account_address::AccountAddress, transaction::SignedTransaction};
+use aptos_types::{account_address::AccountAddress, transaction::{ReplayProtector, SignedTransaction}};
 use serde::{Deserialize, Serialize};
 use std::{
     mem::size_of,
@@ -14,6 +14,16 @@ use std::{
 
 /// Estimated per-txn size minus the raw transaction
 pub const TXN_FIXED_ESTIMATED_BYTES: usize = size_of::<MempoolTransaction>();
+
+// This is the sequence number for an account.
+// For the sender of regular transactions, the sequence number is required.
+// For the sender of orderless transactions, we don't calculate the sequence number.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum AccountSequenceNumberInfo {
+    // Question: Please suggest some better names.
+    Required(u64),
+    NotRequired,
+}
 
 #[derive(Clone, Debug)]
 pub struct MempoolTransaction {
@@ -35,15 +45,15 @@ impl MempoolTransaction {
         expiration_time: Duration,
         ranking_score: u64,
         timeline_state: TimelineState,
-        seqno: u64,
+        account_sequence_number: AccountSequenceNumberInfo,
         insertion_time: SystemTime,
         client_submitted: bool,
         priority_of_sender: Option<BroadcastPeerPriority>,
     ) -> Self {
         Self {
             sequence_info: SequenceInfo {
-                transaction_sequence_number: txn.sequence_number(),
-                account_sequence_number: seqno,
+                transaction_replay_protector: txn.replay_protector(),
+                account_sequence_number,
             },
             txn,
             expiration_time,
@@ -86,8 +96,8 @@ pub enum TimelineState {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct SequenceInfo {
-    pub transaction_sequence_number: u64,
-    pub account_sequence_number: u64,
+    pub transaction_replay_protector: ReplayProtector,
+    pub account_sequence_number: AccountSequenceNumberInfo,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]

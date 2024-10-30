@@ -5,7 +5,7 @@
 //! Tasks that are executed by coordinators (short-lived compared to coordinators)
 use super::types::MempoolMessageId;
 use crate::{
-    core_mempool::{CoreMempool, TimelineState},
+    core_mempool::{AccountSequenceNumberInfo, CoreMempool, TimelineState},
     counters,
     logging::{LogEntry, LogEvent, LogSchema},
     network::{BroadcastError, BroadcastPeerPriority, MempoolSyncMsg},
@@ -30,11 +30,7 @@ use aptos_metrics_core::HistogramTimer;
 use aptos_network::application::interface::NetworkClientInterface;
 use aptos_storage_interface::state_view::LatestDbStateCheckpointView;
 use aptos_types::{
-    account_address::AccountAddress,
-    mempool_status::{MempoolStatus, MempoolStatusCode},
-    on_chain_config::{OnChainConfigPayload, OnChainConfigProvider, OnChainConsensusConfig},
-    transaction::SignedTransaction,
-    vm_status::{DiscardedVMStatus, StatusCode},
+    account_address::AccountAddress, mempool_status::{MempoolStatus, MempoolStatusCode}, on_chain_config::{OnChainConfigPayload, OnChainConfigProvider, OnChainConsensusConfig}, transaction::{ReplayProtector, SignedTransaction}, vm_status::{DiscardedVMStatus, StatusCode}
 };
 use aptos_vm_validator::vm_validator::{get_account_sequence_number, TransactionValidation};
 use futures::{channel::oneshot, stream::FuturesUnordered};
@@ -312,39 +308,56 @@ where
         .expect("Failed to get latest state checkpoint view.");
 
     // Track latency: fetching seq number
-    let seq_numbers = IO_POOL.install(|| {
+    let account_seq_numbers = IO_POOL.install(|| {
         transactions
             .par_iter()
             .map(|(t, _, _)| {
-                get_account_sequence_number(&state_view, t.sender()).map_err(|e| {
-                    error!(LogSchema::new(LogEntry::DBError).error(&e));
-                    counters::DB_ERROR.inc();
-                    e
-                })
+                match t.replay_protector() {
+                    ReplayProtector::Nonce(_) => Ok(AccountSequenceNumberInfo::NotRequired),
+                    ReplayProtector::SequenceNumber(_) => {
+                        get_account_sequence_number(&state_view, t.sender())
+                        .map(|sequence_number| AccountSequenceNumberInfo::Required(sequence_number))
+                        .map_err(|e| {
+                            error!(LogSchema::new(LogEntry::DBError).error(&e));
+                            counters::DB_ERROR.inc();
+                            e
+                        })
+                    },
+                }
             })
             .collect::<Vec<_>>()
     });
+
     // Track latency for storage read fetching sequence number
     let storage_read_latency = start_storage_read.elapsed();
     counters::PROCESS_TXN_BREAKDOWN_LATENCY
         .with_label_values(&[counters::FETCH_SEQ_NUM_LABEL])
         .observe(storage_read_latency.as_secs_f64() / transactions.len() as f64);
-
+    
+    
     let transactions: Vec<_> = transactions
         .into_iter()
         .enumerate()
         .filter_map(|(idx, (t, ready_time_at_sender, priority))| {
-            if let Ok(sequence_num) = seq_numbers[idx] {
-                if t.sequence_number() >= sequence_num {
-                    return Some((t, sequence_num, ready_time_at_sender, priority));
-                } else {
-                    statuses.push((
-                        t,
-                        (
-                            MempoolStatus::new(MempoolStatusCode::VmError),
-                            Some(DiscardedVMStatus::SEQUENCE_NUMBER_TOO_OLD),
-                        ),
-                    ));
+            if let Ok(account_sequence_num) = account_seq_numbers[idx] {
+                match account_sequence_num {
+                    AccountSequenceNumberInfo::Required(sequence_num) => {
+                        if t.sequence_number() >= sequence_num {
+                            return Some((t, sequence_num, ready_time_at_sender, priority));
+                        } else {
+                            statuses.push((
+                                t,
+                                (
+                                    MempoolStatus::new(MempoolStatusCode::VmError),
+                                    Some(DiscardedVMStatus::SEQUENCE_NUMBER_TOO_OLD),
+                                ),
+                            ));
+                        }
+                        Some((t, AccountSequenceNumberInfo::Required(sequence_num), ready_time_at_sender, priority))
+                    },
+                    AccountSequenceNumberInfo::NotRequired => {
+                        Some((t, AccountSequenceNumberInfo::NotRequired, ready_time_at_sender, priority))
+                    },
                 }
             } else {
                 // Failed to get transaction
@@ -377,7 +390,7 @@ where
 fn validate_and_add_transactions<NetworkClient, TransactionValidator>(
     transactions: Vec<(
         SignedTransaction,
-        u64,
+        AccountSequenceNumberInfo,
         Option<u64>,
         Option<BroadcastPeerPriority>,
     )>,
@@ -408,7 +421,7 @@ fn validate_and_add_transactions<NetworkClient, TransactionValidator>(
     vm_validation_timer.stop_and_record();
     {
         let mut mempool = smp.mempool.lock();
-        for (idx, (transaction, sequence_info, ready_time_at_sender, priority)) in
+        for (idx, (transaction, account_sequence_info, ready_time_at_sender, priority)) in
             transactions.into_iter().enumerate()
         {
             if let Ok(validation_result) = &validation_results[idx] {
@@ -418,7 +431,7 @@ fn validate_and_add_transactions<NetworkClient, TransactionValidator>(
                         let mempool_status = mempool.add_txn(
                             transaction.clone(),
                             ranking_score,
-                            sequence_info,
+                            account_sequence_info,
                             timeline_state,
                             client_submitted,
                             ready_time_at_sender,
