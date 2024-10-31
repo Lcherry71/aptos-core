@@ -266,6 +266,7 @@ impl BlockStore {
         if !self.need_sync_for_ledger_info(highest_commit_cert.ledger_info()) {
             return Ok(());
         }
+
         let (root, root_metadata, blocks, quorum_certs) = Self::fast_forward_sync(
             &highest_quorum_cert,
             &highest_commit_cert,

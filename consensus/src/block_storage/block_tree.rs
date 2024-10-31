@@ -98,7 +98,6 @@ pub struct BlockTree {
     max_pruned_blocks_in_mem: usize,
     /// Round to Block index. We expect only one block per round.
     round_to_ids: BTreeMap<Round, HashValue>,
-    window_size: usize,
 }
 
 impl BlockTree {
@@ -110,7 +109,6 @@ impl BlockTree {
         root_ordered_cert: WrappedLedgerInfo,
         root_commit_cert: WrappedLedgerInfo,
         max_pruned_blocks_in_mem: usize,
-        window_size: usize,
         highest_2chain_timeout_cert: Option<Arc<TwoChainTimeoutCertificate>>,
     ) -> Self {
         assert_eq!(window_root.epoch(), root_ordered_cert.commit_info().epoch());
@@ -147,7 +145,6 @@ impl BlockTree {
             max_pruned_blocks_in_mem,
             highest_2chain_timeout_cert,
             round_to_ids,
-            window_size,
         }
     }
 
@@ -254,13 +251,17 @@ impl BlockTree {
 
     // TODO: return an error when not enough blocks?
     // TODO: how to know if the window is complete?
-    pub fn get_block_window(&self, block: &Block) -> Option<OrderedBlockWindow> {
+    pub fn get_block_window(
+        &self,
+        block: &Block,
+        window_size: usize,
+    ) -> Option<OrderedBlockWindow> {
         // TODO: any other special cases that need to always have an empty window?
         if block.is_nil_block() {
             return Some(OrderedBlockWindow::new(vec![]));
         }
 
-        let window_start_round = (block.round() + 1).saturating_sub(self.window_size as u64);
+        let window_start_round = (block.round() + 1).saturating_sub(window_size as u64);
         let window_size = (block.round() + 1) - window_start_round;
         assert!(window_size > 0, "window_size must be greater than 0");
         if window_size == 1 {
@@ -468,10 +469,11 @@ impl BlockTree {
         &self,
         commit_round: Round,
         commit_root_id: HashValue,
+        window_size: usize,
     ) -> HashValue {
         let window_start_round = commit_round
             .saturating_add(1)
-            .saturating_sub(self.window_size as u64);
+            .saturating_sub(window_size as u64);
         let mut window_start_id = HashValue::zero();
         let mut curr_block_id = commit_root_id;
         info!("Start at commit_root_id: {}", curr_block_id);
@@ -576,6 +578,7 @@ impl BlockTree {
         blocks_to_commit: &[Arc<PipelinedBlock>],
         finality_proof: WrappedLedgerInfo,
         commit_decision: LedgerInfoWithSignatures,
+        window_size: usize,
     ) {
         info!("commit_callback blocks_to_commit: {:?}", blocks_to_commit);
 
@@ -587,7 +590,8 @@ impl BlockTree {
 
         let block_id = last_block.id();
         let block_round = last_block.round();
-        let window_root_id = self.find_window_root(committed_round, block_to_commit.id());
+        let window_root_id =
+            self.find_window_root(committed_round, block_to_commit.id(), window_size);
         info!("Updating to window_root_id: {}", window_root_id);
         let ids_to_remove = self.find_blocks_to_prune(window_root_id);
         info!("Pruning blocks: {:?}", ids_to_remove);

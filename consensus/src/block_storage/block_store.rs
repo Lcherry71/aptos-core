@@ -91,6 +91,8 @@ pub struct BlockStore {
     #[cfg(any(test, feature = "fuzzing"))]
     back_pressure_for_test: AtomicBool,
     order_vote_enabled: bool,
+    pending_blocks: Arc<Mutex<PendingBlocks>>,
+    /// Window Size for Execution Pool
     window_size: usize,
     pending_blocks: Arc<Mutex<PendingBlocks>>,
     pipeline_builder: Option<PipelineBuilder>,
@@ -221,7 +223,6 @@ impl BlockStore {
             root_ordered_cert,
             root_commit_cert,
             max_pruned_blocks_in_mem,
-            window_size,
             highest_2chain_timeout_cert.map(Arc::new),
         );
         let inner = if let Some(tree_to_replace) = tree_to_replace {
@@ -298,6 +299,7 @@ impl BlockStore {
         self.pending_blocks
             .lock()
             .gc(finality_proof.commit_info().round());
+        let window_size = self.window_size;
         // This callback is invoked synchronously with and could be used for multiple batches of blocks.
         self.execution_client
             .finalize_order(
@@ -311,6 +313,7 @@ impl BlockStore {
                             committed_blocks,
                             finality_proof,
                             commit_decision,
+                            window_size,
                         );
                     },
                 ),
@@ -344,6 +347,7 @@ impl BlockStore {
                 .collect::<Vec<_>>()
         );
         let max_pruned_blocks_in_mem = self.inner.read().max_pruned_blocks_in_mem();
+
         // Rollover the previous highest TC from the old tree to the new one.
         let prev_2chain_htc = self
             .highest_2chain_timeout_cert()
@@ -438,7 +442,7 @@ impl BlockStore {
             .save_tree(vec![block.clone()], vec![])
             .context("Insert block failed when saving block")?;
         let mut block_tree = self.inner.write();
-        if let Some(block_window) = block_tree.get_block_window(&block) {
+        if let Some(block_window) = block_tree.get_block_window(&block, self.window_size) {
             let now = Instant::now();
             for block in block_window.blocks() {
                 if let Some(payload) = block.payload() {
