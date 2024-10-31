@@ -261,8 +261,9 @@ impl BlockTree {
             return Some(OrderedBlockWindow::new(vec![]));
         }
 
-        let window_start_round = (block.round() + 1).saturating_sub(window_size as u64);
-        let window_size = (block.round() + 1) - window_start_round;
+        let round = block.round();
+        let window_start_round = (round + 1).saturating_sub(window_size as u64);
+        let window_size = (round + 1) - window_start_round;
         assert!(window_size > 0, "window_size must be greater than 0");
         if window_size == 1 {
             return Some(OrderedBlockWindow::new(vec![]));
