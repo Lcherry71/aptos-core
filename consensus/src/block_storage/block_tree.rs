@@ -251,6 +251,29 @@ impl BlockTree {
 
     // TODO: return an error when not enough blocks?
     // TODO: how to know if the window is complete?
+    /// Retrieves a Window of Recent Blocks
+    ///
+    /// Returns an [`OrderedBlockWindow`](OrderedBlockWindow) containing the previous `window_size`
+    /// blocks, EXCLUDING the provided `current_block`. Returns an `OrderedBlockWindow` containing
+    /// the recent blocks in ascending order by round (oldest -> newest).
+    ///
+    /// # Parameters
+    /// - `current_block`: The reference block to base the window on.
+    /// - `window_size`: The number of recent blocks to include in the window, excluding the `current_block`.
+    ///
+    /// # Example
+    /// Given a `current_block` with `round: 30` and a `window_size` of 3:
+    ///
+    /// ```rust
+    /// get_block_window(current_block, window_size)
+    /// // returns vec![
+    /// //     Block { BlockData { round: 28 } },
+    /// //     Block { BlockData { round: 29 } }
+    /// // ]
+    /// ```
+    ///
+    /// *Note*: The output vector in this example contains 2 blocks, not 3, as only blocks with rounds
+    /// preceding `current_block.round()` are included.
     pub fn get_block_window(
         &self,
         block: &Block,
@@ -285,6 +308,7 @@ impl BlockTree {
                     "Visiting block: {}, for window of block: {}",
                     current_block, block
                 );
+                // Note: This is not less than or equal to so that we exclude the current block
                 if current_block.round() < window_start_round {
                     info!(
                         "Break at block: {}, for window of block: {}",

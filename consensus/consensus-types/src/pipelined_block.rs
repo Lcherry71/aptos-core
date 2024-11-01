@@ -118,6 +118,7 @@ pub struct PipelineInputRx {
     pub commit_proof_rx: tokio::sync::broadcast::Receiver<LedgerInfoWithSignatures>,
 }
 
+/// A window of blocks that are needed for execution with the execution pool, EXCLUDING the current block
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OrderedBlockWindow {
     blocks: Vec<Block>,
@@ -145,7 +146,7 @@ impl OrderedBlockWindow {
 pub struct PipelinedBlock {
     /// Block data that cannot be regenerated.
     block: Block,
-    /// A window of blocks that are needed for execution with the execution pool, excluding the current block
+    /// A window of blocks that are needed for execution with the execution pool, EXCLUDING the current block
     block_window: OrderedBlockWindow,
     /// Input transactions in the order of execution
     input_transactions: Vec<SignedTransaction>,
