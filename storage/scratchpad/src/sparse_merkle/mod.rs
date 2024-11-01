@@ -492,9 +492,9 @@ where
     /// all at once.
     /// Since the tree is immutable, existing tree remains the same and may share parts with the
     /// new, returned tree.
-    pub fn batch_update(
+    pub fn batch_update<'a>(
         &self,
-        updates: Vec<(HashValue, Option<&V>)>,
+        updates: impl IntoIterator<Item = (HashValue, Option<&'a V>)>,
         usage: StateStorageUsage,
         proof_reader: &impl ProofRead,
     ) -> Result<Self, UpdateError> {

@@ -154,16 +154,12 @@ impl StateComputeResult {
     pub fn as_chunk_to_commit(&self) -> ChunkToCommit {
         ChunkToCommit {
             first_version: self.ledger_update_output.first_version(),
+            last_state_checkpoint_index: self.execution_output.last_state_checkpoint_index,
             transactions: self.execution_output.to_commit.txns(),
             transaction_outputs: self.execution_output.to_commit.transaction_outputs(),
             transaction_infos: &self.ledger_update_output.transaction_infos,
-            per_version_state_updates: &self.state_checkpoint_output.per_version_state_updates,
             base_state_version: self.state_checkpoint_output.parent_state.base_version,
             latest_in_memory_state: &self.state_checkpoint_output.result_state,
-            state_updates_until_last_checkpoint: self
-                .state_checkpoint_output
-                .state_updates_before_last_checkpoint
-                .as_ref(),
             sharded_state_cache: Some(&self.execution_output.state_cache.sharded_state_cache),
             is_reconfig: self.execution_output.next_epoch_state.is_some(),
         }

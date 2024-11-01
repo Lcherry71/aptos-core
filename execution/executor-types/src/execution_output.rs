@@ -27,6 +27,7 @@ impl ExecutionOutput {
     pub fn new(
         is_block: bool,
         first_version: Version,
+        last_state_checkpoint_index: Option<usize>,
         statuses_for_input_txns: Vec<TransactionStatus>,
         to_commit: TransactionsWithOutput,
         to_discard: TransactionsWithOutput,
@@ -51,6 +52,7 @@ impl ExecutionOutput {
         Self::new_impl(Inner {
             is_block,
             first_version,
+            last_state_checkpoint_index,
             statuses_for_input_txns,
             to_commit,
             to_discard,
@@ -66,6 +68,7 @@ impl ExecutionOutput {
         Self::new_impl(Inner {
             is_block: false,
             first_version: state.next_version(),
+            last_state_checkpoint_index: None,
             statuses_for_input_txns: vec![],
             to_commit: TransactionsWithOutput::new_empty(),
             to_discard: TransactionsWithOutput::new_empty(),
@@ -83,6 +86,7 @@ impl ExecutionOutput {
         Self::new_impl(Inner {
             is_block: false,
             first_version: 0,
+            last_state_checkpoint_index: None,
             statuses_for_input_txns: vec![success_status; num_txns],
             to_commit: TransactionsWithOutput::new_dummy_success(txns),
             to_discard: TransactionsWithOutput::new_empty(),
@@ -102,6 +106,7 @@ impl ExecutionOutput {
         Self::new_impl(Inner {
             is_block: false,
             first_version: self.next_version(),
+            last_state_checkpoint_index: None,
             statuses_for_input_txns: vec![],
             to_commit: TransactionsWithOutput::new_empty(),
             to_discard: TransactionsWithOutput::new_empty(),
@@ -136,6 +141,7 @@ impl ExecutionOutput {
 pub struct Inner {
     pub is_block: bool,
     pub first_version: Version,
+    pub last_state_checkpoint_index: Option<usize>,
     // Statuses of the input transactions, in the same order as the input transactions.
     // Contains BlockMetadata/Validator transactions,
     // but doesn't contain StateCheckpoint/BlockEpilogue, as those get added during execution

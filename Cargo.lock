@@ -1479,6 +1479,7 @@ dependencies = [
  "arr_macro",
  "bcs 0.1.4",
  "bytes",
+ "criterion",
  "dashmap",
  "fail",
  "itertools 0.13.0",

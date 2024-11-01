@@ -32,12 +32,13 @@ impl DbWriter for AptosDB {
             // n.b make sure buffered_state.update() is called after all other commits are done, since
             // internally it updates state_store.current_state which indicates the "pre-committed version"
             let _timer = OTHER_TIMERS_SECONDS.timer_with(&["save_transactions__others"]);
+            let updates_before_last_check_point = chunk.collect_updates_until_last_state_checkpoint();
             {
                 let mut buffered_state = self.state_store.buffered_state().lock();
 
                 let _timer = OTHER_TIMERS_SECONDS.timer_with(&["buffered_state___update"]);
                 buffered_state.update(
-                    chunk.state_updates_until_last_checkpoint,
+                    updates_before_last_check_point,
                     chunk.latest_in_memory_state,
                     sync_commit || chunk.is_reconfig,
                 )?;
@@ -338,7 +339,7 @@ impl AptosDB {
 
         // TODO(grao): Make state_store take sharded state updates.
         self.state_store.put_value_sets(
-            chunk.per_version_state_updates,
+            chunk.transaction_outputs.iter().map(TransactionOutput::write_set),
             chunk.first_version,
             chunk.latest_in_memory_state.current.usage(),
             chunk.sharded_state_cache,

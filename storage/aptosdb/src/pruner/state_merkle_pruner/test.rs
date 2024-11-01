@@ -29,8 +29,8 @@ use aptos_types::{
         state_value::{StaleStateValueByKeyHashIndex, StaleStateValueIndex, StateValue},
     },
     transaction::Version,
+    write_set::WriteSet,
 };
-use arr_macro::arr;
 use proptest::{prelude::*, proptest};
 use std::{collections::HashMap, sync::Arc};
 
@@ -39,13 +39,11 @@ fn put_value_set(
     value_set: Vec<(StateKey, StateValue)>,
     version: Version,
 ) -> HashValue {
-    let mut sharded_value_set = arr![HashMap::new(); 16];
+    let write_set =
+        WriteSet::new_for_test(value_set.iter().map(|(k, v)| (k.clone(), Some(v.clone()))));
     let value_set: HashMap<_, _> = value_set
         .iter()
-        .map(|(key, value)| {
-            sharded_value_set[key.get_shard_id() as usize].insert(key.clone(), Some(value.clone()));
-            (key, Some(value))
-        })
+        .map(|(key, value)| (key, Some(value)))
         .collect();
     let jmt_updates = jmt_updates(&value_set);
 
@@ -63,7 +61,7 @@ fn put_value_set(
     let enable_sharding = state_store.state_kv_db.enabled_sharding();
     state_store
         .put_value_sets(
-            &[sharded_value_set],
+            &[write_set],
             version,
             StateStorageUsage::new_untracked(),
             None,

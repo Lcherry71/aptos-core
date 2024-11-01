@@ -340,6 +340,7 @@ impl Parser {
         let out = ExecutionOutput::new(
             is_block,
             first_version,
+            to_commit.get_last_checkpoint_index(),
             statuses_for_input_txns,
             to_commit,
             to_discard,

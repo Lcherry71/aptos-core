@@ -6,11 +6,11 @@ use aptos_drop_helper::DropHelper;
 use aptos_scratchpad::SparseMerkleTree;
 use aptos_types::{
     state_store::{
-        combine_sharded_state_updates, create_empty_sharded_state_updates,
-        state_storage_usage::StateStorageUsage, state_value::StateValue, ShardedStateUpdates,
+        state_key::StateKey, state_storage_usage::StateStorageUsage, state_value::StateValue,
     },
     transaction::Version,
 };
+use std::{collections::HashMap, ops::DerefMut};
 
 /// This represents two state sparse merkle trees at their versions in memory with the updates
 /// reflecting the difference of `current` on top of `base`.
@@ -25,7 +25,7 @@ pub struct StateDelta {
     pub base_version: Option<Version>,
     pub current: SparseMerkleTree<StateValue>,
     pub current_version: Option<Version>,
-    pub updates_since_base: DropHelper<ShardedStateUpdates>,
+    pub updates_since_base: DropHelper<HashMap<StateKey, Option<StateValue>>>,
 }
 
 impl StateDelta {
@@ -34,7 +34,7 @@ impl StateDelta {
         base_version: Option<Version>,
         current: SparseMerkleTree<StateValue>,
         current_version: Option<Version>,
-        updates_since_base: ShardedStateUpdates,
+        updates_since_base: HashMap<StateKey, Option<StateValue>>,
     ) -> Self {
         assert!(base.is_family(&current));
         assert!(base_version.map_or(0, |v| v + 1) <= current_version.map_or(0, |v| v + 1));
@@ -49,13 +49,7 @@ impl StateDelta {
 
     pub fn new_empty_with_version(version: Option<u64>) -> StateDelta {
         let smt = SparseMerkleTree::new_empty();
-        Self::new(
-            smt.clone(),
-            version,
-            smt,
-            version,
-            create_empty_sharded_state_updates(),
-        )
+        Self::new(smt.clone(), version, smt, version, HashMap::new())
     }
 
     pub fn new_empty() -> Self {
@@ -73,13 +67,14 @@ impl StateDelta {
             checkpoint_version,
             smt,
             checkpoint_version,
-            create_empty_sharded_state_updates(),
+            HashMap::new(),
         )
     }
 
-    pub fn merge(&mut self, other: StateDelta) {
+    pub fn merge(&mut self, mut other: StateDelta) {
         assert!(other.follow(self));
-        combine_sharded_state_updates(&mut self.updates_since_base, &other.updates_since_base);
+        self.updates_since_base
+            .extend(other.updates_since_base.deref_mut().drain());
 
         self.current = other.current;
         self.current_version = other.current_version;

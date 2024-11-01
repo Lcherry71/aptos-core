@@ -4,6 +4,7 @@
 //! This file defines the state snapshot committer running in background thread within StateStore.
 
 use crate::{
+    common::NUM_STATE_SHARDS,
     metrics::OTHER_TIMERS_SECONDS,
     state_store::{
         buffered_state::CommitMessage,
@@ -12,14 +13,19 @@ use crate::{
     },
     versioned_node_cache::VersionedNodeCache,
 };
+use aptos_crypto::hash::CryptoHash;
 use aptos_experimental_runtimes::thread_manager::THREAD_MANAGER;
 use aptos_logger::trace;
+use aptos_metrics_core::TimerHelper;
 use aptos_scratchpad::SmtAncestors;
-use aptos_storage_interface::{jmt_update_refs, jmt_updates, state_delta::StateDelta, Result};
+use aptos_storage_interface::{jmt_update_refs, state_delta::StateDelta, Result};
 use aptos_types::state_store::state_value::StateValue;
+use arr_macro::arr;
+use itertools::Itertools;
 use rayon::prelude::*;
 use static_assertions::const_assert;
 use std::{
+    collections::HashMap,
     sync::{
         mpsc,
         mpsc::{Receiver, SyncSender},
@@ -95,8 +101,25 @@ impl StateSnapshotCommitter {
                             .get_shard_persisted_versions(base_version)
                             .unwrap();
 
+                        // TODO(aldenhu): avoid collecting to per shard updates before hand
+                        let jmt_updates_by_shard = {
+                            let _timer =
+                                OTHER_TIMERS_SECONDS.timer_with(&["get_sharded_jmt_updates"]);
+                            let mut ret = arr![HashMap::new(); 16];
+                            delta_to_commit
+                                .updates_since_base
+                                .iter()
+                                .for_each(|(key, val_opt)| {
+                                    ret[key.get_shard_id() as usize].insert(
+                                        key.hash(),
+                                        val_opt.as_ref().map(|v| (v.hash(), key.clone())),
+                                    );
+                                });
+                            ret.map(|hash_map| hash_map.into_iter().collect_vec())
+                        };
+
                         THREAD_MANAGER.get_non_exe_cpu_pool().install(|| {
-                            (0..16)
+                            (0..NUM_STATE_SHARDS as u8)
                                 .into_par_iter()
                                 .map(|shard_id| {
                                     let node_hashes = delta_to_commit
@@ -104,12 +127,7 @@ impl StateSnapshotCommitter {
                                         .new_node_hashes_since(&delta_to_commit.base, shard_id);
                                     self.state_db.state_merkle_db.merklize_value_set_for_shard(
                                         shard_id,
-                                        jmt_update_refs(&jmt_updates(
-                                            &delta_to_commit.updates_since_base[shard_id as usize]
-                                                .iter()
-                                                .map(|(k, v)| (k, v.as_ref()))
-                                                .collect(),
-                                        )),
+                                        jmt_update_refs(&jmt_updates_by_shard[shard_id as usize]),
                                         Some(&node_hashes),
                                         version,
                                         base_version,
