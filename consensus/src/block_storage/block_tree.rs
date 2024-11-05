@@ -284,6 +284,14 @@ impl BlockTree {
             return Some(OrderedBlockWindow::new(vec![]));
         }
 
+        // TODO Currently we do not check to see if the `block` provided exists in the `BlockTree`
+        // See `insert_block()` for more context.
+        //
+        // It's a little strange because you can call `get_block_window` with a recently pruned block,
+        // and it will return a seemingly valid OrderedBlockWindow... which is a bit unintuitive.
+        // Maybe rename this function or scope it to be non-public to not confuse people in the future.
+        // Revisit this later
+
         let round = block.round();
         let window_start_round = (round + 1).saturating_sub(window_size as u64);
         let window_size = (round + 1) - window_start_round;
