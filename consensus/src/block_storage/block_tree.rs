@@ -316,6 +316,13 @@ impl BlockTree {
                     );
                     break;
                 }
+                if current_block.is_genesis_block() {
+                    info!(
+                        "Break at genesis block: {}, for window of block: {}",
+                        current_block, block
+                    );
+                    break;
+                }
                 info!(
                     "Added block: {}, for window of block: {}",
                     current_block, block
