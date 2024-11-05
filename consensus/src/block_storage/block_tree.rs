@@ -264,7 +264,7 @@ impl BlockTree {
     /// # Example
     /// Given a `current_block` with `round: 30` and a `window_size` of 3:
     ///
-    /// ```rust
+    /// ```text
     /// get_block_window(current_block, window_size)
     /// // returns vec![
     /// //     Block { BlockData { round: 28 } },
@@ -335,7 +335,7 @@ impl BlockTree {
                     "Added block: {}, for window of block: {}",
                     current_block, block
                 );
-                window.push(current_block.clone());
+                window.push(parent_block);
             } else {
                 info!(
                     "Visiting block: {} was not found, parent of block: {}, for window of block: {}",
