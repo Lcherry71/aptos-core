@@ -511,6 +511,7 @@ impl BlockTree {
         commit_root_id: HashValue,
         window_size: usize,
     ) -> HashValue {
+        assert_ne!(window_size, 0, "Window size must be greater than 0");
         let window_start_round = commit_round
             .saturating_add(1)
             .saturating_sub(window_size as u64);
