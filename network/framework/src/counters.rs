@@ -2,8 +2,11 @@
 // Parts of the project are originally copyright © Meta Platforms, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::protocols::wire::handshake::v1::ProtocolId;
-use aptos_config::network_id::NetworkContext;
+use crate::protocols::wire::{
+    handshake::v1::ProtocolId,
+    messaging::v1::metadata::{MessageSendType, MessageStreamType},
+};
+use aptos_config::network_id::{NetworkContext, NetworkId};
 use aptos_metrics_core::{
     exponential_buckets, register_histogram_vec, register_int_counter_vec, register_int_gauge,
     register_int_gauge_vec, Histogram, HistogramTimer, HistogramVec, IntCounter, IntCounterVec,
@@ -196,6 +199,42 @@ pub static APTOS_NETWORK_DISCOVERY_NOTES: Lazy<IntGaugeVec> = Lazy::new(|| {
     )
     .unwrap()
 });
+
+/// Time it takes to for messages to be sent by the network layer (e.g.,
+/// between when the application sends the message and when it is sent on the wire).
+pub static APTOS_NETWORK_MESSAGE_SEND_LATENCY: Lazy<HistogramVec> = Lazy::new(|| {
+    register_histogram_vec!(
+        "aptos_network_message_send_latency",
+        "Time it takes for messages to be sent by the network layer",
+        &[
+            "network_id",
+            "protocol_id",
+            "message_type",
+            "message_stream_type",
+        ],
+        exponential_buckets(/*start=*/ 1e-6, /*factor=*/ 2.0, /*count=*/ 30).unwrap(),
+    )
+    .unwrap()
+});
+
+/// Observes the value for the provided histogram and labels
+pub fn observe_value_with_labels(
+    histogram: &Lazy<HistogramVec>,
+    network_id: &NetworkId,
+    protocol_id: &ProtocolId,
+    message_send_type: &MessageSendType,
+    message_stream_type: &MessageStreamType,
+    value: f64,
+) {
+    histogram
+        .with_label_values(&[
+            network_id.as_str(),
+            protocol_id.as_str(),
+            message_send_type.get_label(),
+            message_stream_type.get_label(),
+        ])
+        .observe(value)
+}
 
 pub static APTOS_NETWORK_RPC_MESSAGES: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!("aptos_network_rpc_messages", "Number of RPC messages", &[
