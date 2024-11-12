@@ -274,7 +274,7 @@ impl BlockTree {
     ///
     /// *Note*: The output vector in this example contains 2 blocks, not 3, as only blocks with rounds
     /// preceding `current_block.round()` are included.
-    pub fn get_block_window(
+    pub fn get_ordered_block_window(
         &self,
         block: &Block,
         window_size: usize,

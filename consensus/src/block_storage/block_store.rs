@@ -442,7 +442,7 @@ impl BlockStore {
             .save_tree(vec![block.clone()], vec![])
             .context("Insert block failed when saving block")?;
         let mut block_tree = self.inner.write();
-        if let Some(block_window) = block_tree.get_block_window(&block, self.window_size) {
+        if let Some(block_window) = block_tree.get_ordered_block_window(&block, self.window_size) {
             let now = Instant::now();
             for block in block_window.blocks() {
                 if let Some(payload) = block.payload() {
