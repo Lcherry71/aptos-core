@@ -225,7 +225,7 @@ impl Execution {
                 let handle_v1 = std::thread::spawn(move || {
                     let res = Self::execute_one_txn_with_result(cur_version, &dm.lock().unwrap(), &mut cache.lock().unwrap(), false,
                 path.lock().unwrap().to_path_buf(), &mode.lock().unwrap(), &packages.lock().unwrap());
-                    println!("res v1:{:?}", res);
+                   println!("res v1:{:?} at version:{}", res, cur_version);
                     r.lock().unwrap().push(res.clone());
                 });
                 let dm = data_manager_copy.clone();
@@ -237,29 +237,31 @@ impl Execution {
                 let handle_v2 = std::thread::spawn(move || {
                     let res = Self::execute_one_txn_with_result(cur_version, &dm.lock().unwrap(), &mut cache.lock().unwrap(), true,
                     path.lock().unwrap().to_path_buf(), &mode.lock().unwrap(), &packages.lock().unwrap());
-                    println!("res v2:{:?}", res);
+                   println!("res v2:{:?} at version:{}", res, cur_version);
                     r.lock().unwrap().push(res.clone());
                 });
                 handle_v1.join().unwrap();
                 handle_v2.join().unwrap();
-                println!("results:{:?}", results);
-                let r = Arc::try_unwrap(results.clone()).unwrap().into_inner();
-                if r.is_err() {
-                    eprintln!("error when getting execution result at {}, r:{:?}", cur_version, r.err());
-                } else {
-                    let r = r.unwrap();
+                //println!("results:{:?}", results);
+                if let Ok(mut vec) = results.lock() {
                     // futures::future::join_all(threads).await;
-                    if r[0].is_none() || r[1].is_none() {
+                    if vec[0].is_none() || vec[1].is_none() {
                         self.output_result_str(format!(
                             "execution at version:{} failed, skip to the next txn",
                             cur_version
                         ));
                     }
-                    let r_1 = r[0].as_ref().unwrap();
-                    let r_2 = r[1].as_ref().unwrap();
+                    let r_1 = vec[0].as_ref().unwrap();
+                    let r_2 = vec[1].as_ref().unwrap();
                     self.print_mismatches(cur_version, r_1, r_2, None);
+                } else {
+                    eprintln!("error when getting execution result at {}", cur_version);
                 }
+                // let r = Arc::try_unwrap(results.clone()).unwrap().into_inner();
+                // if r.is_err() {
+                // } else {
 
+                // }
                 let mut ver_res = index_reader.get_next_version();
                 while ver_res.is_err() {
                     ver_res = index_reader.get_next_version();
@@ -489,9 +491,9 @@ impl Execution {
             // read the state data
             let state = data_manager.get_state(cur_version);
             let cache = if v2_flag {
-                &compiled_cache.compiled_package_cache_v1
-            } else {
                 &compiled_cache.compiled_package_cache_v2
+            } else {
+                &compiled_cache.compiled_package_cache_v1
             };
             return Some(Self::execute_with_result(
                 cur_version,
@@ -892,6 +894,7 @@ impl Execution {
                         cur_version
                     ));
                 }
+                println!("gas_v1:{}, gas_v2:{} at version:{}", gas_used_1, gas_used_2, cur_version);
                 let (diff, gas2_gt_gas1, gas1_gt_gas_2) =
                     gas_diff(*gas_used_1, *gas_used_2, GAS_DIFF_PERCENTAGE);
                 let greater_version = if gas1_gt_gas_2 { "v1" } else { "v2" };
