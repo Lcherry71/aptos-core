@@ -26,6 +26,9 @@ use move_binary_format::file_format_common::VERSION_DEFAULT;
 use move_core_types::{account_address::AccountAddress, language_storage::ModuleId};
 use move_model::metadata::CompilerVersion;
 use std::{cmp, collections::HashMap, env, path::PathBuf, sync::Arc};
+use std::{
+    sync::Mutex,
+};
 // use std::cmp::min;
 
 const GAS_DIFF_PERCENTAGE: u64 = 5;
@@ -111,7 +114,21 @@ impl Execution {
         }
     }
 
+    pub fn check_package_skip_alternative(skip_ref_packages: &Option<String>, package_name: &str) -> bool {
+        println!("package name:{}", package_name);
+        if let Some(p) = skip_ref_packages {
+            let packages = p.split(',').collect_vec();
+            packages.contains(&package_name)
+        } else {
+            false
+        }
+    }
+
     pub fn output_result_str(&self, msg: String) {
+        eprintln!("{}", msg);
+    }
+
+    pub fn output_result_str_alternative(msg: String) {
         eprintln!("{}", msg);
     }
 
@@ -169,26 +186,188 @@ impl Execution {
         }
         let mut cur_version = ver.unwrap();
         let mut i = 0;
-        while i < num_txns_to_execute {
-            let res = self.execute_one_txn(cur_version, &data_manager, &mut compiled_cache);
-            if res.is_err() {
-                self.output_result_str(format!(
-                    "execution at version:{} failed, skip to the next txn",
-                    cur_version
-                ));
+        if !self.execution_mode.is_compare() {
+            while i < num_txns_to_execute {
+                let res: std::result::Result<(), anyhow::Error> = self.execute_one_txn(cur_version, &data_manager, &mut compiled_cache);
+                if res.is_err() {
+                    self.output_result_str(format!(
+                        "execution at version:{} failed, skip to the next txn",
+                        cur_version
+                    ));
+                }
+                let mut ver_res = index_reader.get_next_version();
+                while ver_res.is_err() {
+                    ver_res = index_reader.get_next_version();
+                }
+                if ver_res.is_ok() {
+                    if let Some(ver) = ver_res.unwrap() {
+                        cur_version = ver;
+                    } else {
+                        break;
+                    }
+                }
+                i += 1;
             }
-            let mut ver_res = index_reader.get_next_version();
-            while ver_res.is_err() {
-                ver_res = index_reader.get_next_version();
-            }
-            if ver_res.is_ok() {
-                if let Some(ver) = ver_res.unwrap() {
-                    cur_version = ver;
+        } else {
+            let data_manager_copy = Arc::new(Mutex::new(data_manager));
+            let cache_copy: Arc<Mutex<CompilationCache>> = Arc::new(Mutex::new(compiled_cache));
+            let input_path = Arc::new(Mutex::new(self.input_path.clone()));
+            let execution_mode = Arc::new(Mutex::new(self.execution_mode));
+            let skip_packages = Arc::new(Mutex::new(self.skip_ref_packages.clone()));
+            let results = Arc::new(Mutex::new(Vec::new()));
+            while i < num_txns_to_execute {
+                let dm = data_manager_copy.clone();
+                let cache = cache_copy.clone();
+                let path = input_path.clone();
+                let mode = execution_mode.clone();
+                let packages = skip_packages.clone();
+                let r: Arc<Mutex<Vec<Option<std::result::Result<((WriteSet, Vec<ContractEvent>), TransactionStatus, u64), VMStatus>>>>> = results.clone();
+                let handle_v1 = std::thread::spawn(move || {
+                    let res = Self::execute_one_txn_with_result(cur_version, &dm.lock().unwrap(), &mut cache.lock().unwrap(), false,
+                path.lock().unwrap().to_path_buf(), &mode.lock().unwrap(), &packages.lock().unwrap());
+                    println!("res v1:{:?}", res);
+                    r.lock().unwrap().push(res.clone());
+                });
+                let dm = data_manager_copy.clone();
+                let cache = cache_copy.clone();
+                let path = input_path.clone();
+                let mode = execution_mode.clone();
+                let packages = skip_packages.clone();
+                let r: Arc<Mutex<Vec<Option<std::result::Result<((WriteSet, Vec<ContractEvent>), TransactionStatus, u64), VMStatus>>>>> = results.clone();
+                let handle_v2 = std::thread::spawn(move || {
+                    let res = Self::execute_one_txn_with_result(cur_version, &dm.lock().unwrap(), &mut cache.lock().unwrap(), true,
+                    path.lock().unwrap().to_path_buf(), &mode.lock().unwrap(), &packages.lock().unwrap());
+                    println!("res v2:{:?}", res);
+                    r.lock().unwrap().push(res.clone());
+                });
+                handle_v1.join().unwrap();
+                handle_v2.join().unwrap();
+                println!("results:{:?}", results);
+                let r = Arc::try_unwrap(results.clone()).unwrap().into_inner();
+                if r.is_err() {
+                    eprintln!("error when getting execution result at {}, r:{:?}", cur_version, r.err());
                 } else {
-                    break;
+                    let r = r.unwrap();
+                    // futures::future::join_all(threads).await;
+                    if r[0].is_none() || r[1].is_none() {
+                        self.output_result_str(format!(
+                            "execution at version:{} failed, skip to the next txn",
+                            cur_version
+                        ));
+                    }
+                    let r_1 = r[0].as_ref().unwrap();
+                    let r_2 = r[1].as_ref().unwrap();
+                    self.print_mismatches(cur_version, r_1, r_2, None);
+                }
+
+                let mut ver_res = index_reader.get_next_version();
+                while ver_res.is_err() {
+                    ver_res = index_reader.get_next_version();
+                }
+                if ver_res.is_ok() {
+                    if let Some(ver) = ver_res.unwrap() {
+                        cur_version = ver;
+                    } else {
+                        break;
+                    }
+                }
+                i += 1;
+            }
+        }
+        Ok(())
+    }
+
+    fn compile_code_alternative(
+        input_path: PathBuf,
+        txn_idx: &TxnIndex,
+        compiled_cache: &mut CompilationCache,
+        execution_mode: &ExecutionMode,
+        skip_ref_packages: &Option<String>,
+    ) -> Result<()> {
+        if !txn_idx.package_info.is_compilable() {
+            return Err(anyhow::Error::msg("not compilable"));
+        }
+        let package_info = txn_idx.package_info.clone();
+        let package_dir = input_path.join(format!("{}", package_info));
+        if !package_dir.exists() {
+            return Err(anyhow::Error::msg("source code is not available"));
+        }
+        let mut v1_failed = false;
+        let mut v2_failed = false;
+        if execution_mode.is_v1_or_compare()
+            && !compiled_cache
+                .compiled_package_cache_v1
+                .contains_key(&package_info)
+        {
+            if compiled_cache.failed_packages_v1.contains(&package_info) {
+                v1_failed = true;
+            } else {
+                let compiled_res_v1 = compile_package(
+                    package_dir.clone(),
+                    &package_info,
+                    Some(CompilerVersion::V1),
+                );
+                if let Ok(compiled_res) = compiled_res_v1 {
+                    generate_compiled_blob(
+                        &package_info,
+                        &compiled_res,
+                        &mut compiled_cache.compiled_package_cache_v1,
+                    );
+                } else {
+                    v1_failed = true;
+                    compiled_cache
+                        .failed_packages_v1
+                        .insert(package_info.clone());
                 }
             }
-            i += 1;
+        }
+        if execution_mode.is_v2_or_compare()
+            && !compiled_cache
+                .compiled_package_cache_v2
+                .contains_key(&package_info)
+        {
+            if compiled_cache.failed_packages_v2.contains(&package_info) {
+                v2_failed = true;
+            } else {
+                if Self::check_package_skip_alternative(skip_ref_packages, &package_info.package_name) {
+                    env::set_var(
+                        "MOVE_COMPILER_EXP",
+                        format!("{},{}", DISABLE_SPEC_CHECK, DISABLE_REF_CHECK),
+                    );
+                } else {
+                    env::set_var(
+                        "MOVE_COMPILER_EXP",
+                        format!("{},{}", DISABLE_SPEC_CHECK, ENABLE_REF_CHECK),
+                    );
+                }
+                let compiled_res_v2 =
+                    compile_package(package_dir, &package_info, Some(CompilerVersion::latest_stable()));
+                if let Ok(compiled_res) = compiled_res_v2 {
+                    generate_compiled_blob(
+                        &package_info,
+                        &compiled_res,
+                        &mut compiled_cache.compiled_package_cache_v2,
+                    );
+                } else {
+                    v2_failed = true;
+                    compiled_cache
+                        .failed_packages_v2
+                        .insert(package_info.clone());
+                }
+            }
+        }
+        if v1_failed || v2_failed {
+            let mut err_msg = format!(
+                "compilation for the package {} failed at",
+                package_info.package_name
+            );
+            if v1_failed {
+                err_msg = format!("{} v1", err_msg);
+            }
+            if v2_failed {
+                err_msg = format!("{} v2", err_msg);
+            }
+            return Err(anyhow::Error::msg(err_msg));
         }
         Ok(())
     }
@@ -286,6 +465,45 @@ impl Execution {
         Ok(())
     }
 
+    fn execute_one_txn_with_result(
+        cur_version: Version,
+        data_manager: &DataManager,
+        compiled_cache: &mut CompilationCache,
+        v2_flag: bool,
+        input_path: PathBuf,
+        execution_mode: &ExecutionMode,
+        skip_ref_packages: &Option<String>,
+    ) -> Option<Result<((WriteSet, Vec<ContractEvent>), TransactionStatus, u64), VMStatus>> {
+        if let Some(mut txn_idx) = data_manager.get_txn_index(cur_version) {
+            // compile the code if the source code is available
+            if txn_idx.package_info.is_compilable()
+                && !is_aptos_package(&txn_idx.package_info.package_name)
+            {
+                let compiled_result = Self::compile_code_alternative(input_path, &txn_idx, compiled_cache, execution_mode, skip_ref_packages);
+                if compiled_result.is_err() {
+                    let err = compiled_result.unwrap_err();
+                    Self::output_result_str_alternative(format!("{} at version:{}", err, cur_version));
+                    return None;
+                }
+            }
+            // read the state data
+            let state = data_manager.get_state(cur_version);
+            let cache = if v2_flag {
+                &compiled_cache.compiled_package_cache_v1
+            } else {
+                &compiled_cache.compiled_package_cache_v2
+            };
+            return Some(Self::execute_with_result(
+                cur_version,
+                state,
+                &mut txn_idx,
+                cache,
+                None,
+            ));
+        }
+        None
+    }
+
     fn execute_one_txn(
         &self,
         cur_version: Version,
@@ -341,7 +559,6 @@ impl Execution {
             &mut txn_idx.txn,
             package_cache_main,
             debugger.clone(),
-            v2_flag,
         );
         if self.execution_mode.is_compare() {
             let res_other = self.execute_code(
@@ -351,13 +568,12 @@ impl Execution {
                 &mut txn_idx.txn,
                 package_cache_other,
                 debugger.clone(),
-                true,
             );
             self.print_mismatches(
                 cur_version,
                 &res_main,
                 &res_other,
-                txn_idx.package_info.package_name.clone(),
+                Some(txn_idx.package_info.package_name.clone()),
             );
         } else {
             match res_main {
@@ -377,15 +593,31 @@ impl Execution {
         }
     }
 
-    fn execute_code(
-        &self,
+    pub(crate) fn execute_with_result(
+        cur_version: Version,
+        state: FakeDataStore,
+        txn_idx: &mut TxnIndex,
+        compiled_package_cache: &HashMap<PackageInfo, HashMap<ModuleId, Vec<u8>>>,
+        debugger: Option<Arc<dyn AptosValidatorInterface + Send>>,
+    ) -> Result<((WriteSet, Vec<ContractEvent>), TransactionStatus, u64), VMStatus>  {
+        let mut package_cache_main = compiled_package_cache;
+        Self::execute_code_alternative(
+            cur_version,
+            state.clone(),
+            &txn_idx.package_info,
+            &mut txn_idx.txn,
+            package_cache_main,
+            debugger.clone(),
+        )
+    }
+
+    fn execute_code_alternative(
         version: Version,
         mut state: FakeDataStore,
         package_info: &PackageInfo,
         txn: &mut Transaction,
         compiled_package_cache: &HashMap<PackageInfo, HashMap<ModuleId, Vec<u8>>>,
         debugger_opt: Option<Arc<dyn AptosValidatorInterface + Send>>,
-        v2_flag: bool,
     ) -> Result<((WriteSet, Vec<ContractEvent>), TransactionStatus, u64), VMStatus> {
         // Always add Aptos (0x1) packages.
         add_aptos_packages_to_data_store(&mut state, compiled_package_cache);
@@ -416,7 +648,7 @@ impl Execution {
         if let Some(debugger) = debugger_opt {
             let data_view = DataStateView::new(debugger, version, state);
             executor
-                .execute_transaction_block_with_state_view(txns, &data_view, false)
+                .execute_transaction_block_with_state_view(txns, &data_view, false, true)
                 .map(|mut res| {
                     let res_i = res.pop().unwrap();
                     (
@@ -427,7 +659,75 @@ impl Execution {
                 })
         } else {
             let res = executor
-                .execute_transaction_block_with_state_view(txns, &state, false)
+                .execute_transaction_block_with_state_view(txns, &state, false, true)
+                .map(|mut res| {
+                    let res_i = res.pop().unwrap();
+                    // println!(
+                    //     "v2 flag:{} gas used:{}, status:{:?}",
+                    //     v2_flag,
+                    //     res_i.gas_used(),
+                    //     res_i.status()
+                    // );
+                    (
+                        res_i.clone().into(),
+                        res_i.status().clone(),
+                        res_i.gas_used(),
+                    )
+                });
+            res
+        }
+    }
+
+    fn execute_code(
+        &self,
+        version: Version,
+        mut state: FakeDataStore,
+        package_info: &PackageInfo,
+        txn: &mut Transaction,
+        compiled_package_cache: &HashMap<PackageInfo, HashMap<ModuleId, Vec<u8>>>,
+        debugger_opt: Option<Arc<dyn AptosValidatorInterface + Send>>,
+    ) -> Result<((WriteSet, Vec<ContractEvent>), TransactionStatus, u64), VMStatus> {
+        // Always add Aptos (0x1) packages.
+        add_aptos_packages_to_data_store(&mut state, compiled_package_cache);
+
+        // Add other modules.
+        if package_info.is_compilable() {
+            add_packages_to_data_store(&mut state, package_info, compiled_package_cache);
+        }
+
+        // Update features if needed to the correct binary format used by V2 compiler.
+        let mut features = Features::fetch_config(&state).unwrap_or_default();
+        features.enable(FeatureFlag::VM_BINARY_FORMAT_V7);
+        features.enable(FeatureFlag::ENABLE_LOADER_V2);
+        // if v2_flag {
+        //     features.enable(FeatureFlag::FAKE_FEATURE_FOR_COMPARISON_TESTING);
+        // }
+        state.set_features(features);
+
+        // We use executor only to get access to block executor and avoid some of
+        // the initializations, but ignore its internal state, i.e., FakeDataStore.
+        let executor = FakeExecutor::no_genesis();
+        let txns = vec![txn.clone()];
+        // for txn in &mut txns {
+        // if let UserTransaction(_signed_transaction) = txn {
+        // signed_transaction.set_max_gmount(min(100_000, signed_transaction.max_gas_amount() * 2));
+        // }
+        // }
+        if let Some(debugger) = debugger_opt {
+            let data_view = DataStateView::new(debugger, version, state);
+            executor
+                .execute_transaction_block_with_state_view(txns, &data_view, false, true)
+                .map(|mut res| {
+                    let res_i = res.pop().unwrap();
+                    (
+                        res_i.clone().into(),
+                        res_i.status().clone(),
+                        res_i.gas_used(),
+                    )
+                })
+        } else {
+            let res = executor
+                .execute_transaction_block_with_state_view(txns, &state, false, true)
                 .map(|mut res| {
                     let res_i = res.pop().unwrap();
                     // println!(
@@ -470,7 +770,7 @@ impl Execution {
         cur_version: u64,
         res_1: &Result<((WriteSet, Vec<ContractEvent>), TransactionStatus, u64), VMStatus>,
         res_2: &Result<((WriteSet, Vec<ContractEvent>), TransactionStatus, u64), VMStatus>,
-        package_name: String,
+        package_name: Option<String>,
     ) {
         let gas_diff = |gas_1: u64, gas_2: u64, x: u64| -> (f64, bool, bool) {
             let gas2_ge_gas1 = gas_2 >= gas_1;
@@ -598,7 +898,7 @@ impl Execution {
                 if gas2_gt_gas1 || gas1_gt_gas_2 {
                     self.output_result_str(format!(
                         "gas diff: {}'s gas usage is {} percent more than the other at version: {}, v1 status:{:?}, v2 status:{:?} for package:{}",
-                        greater_version, diff, cur_version, txn_status_1, txn_status_2, package_name
+                        greater_version, diff, cur_version, txn_status_1, txn_status_2, package_name.unwrap_or("unknown package".to_string())
                     ));
                 }
             },
