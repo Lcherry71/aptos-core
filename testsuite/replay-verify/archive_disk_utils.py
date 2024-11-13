@@ -1,3 +1,4 @@
+import argparse
 from google.cloud import compute_v1
 from kubernetes import client, config
 import time
@@ -5,6 +6,7 @@ import logging
 import concurrent.futures
 import time
 import yaml
+import sys
 
 # Constants
 DISK_COPIES = 4
@@ -33,7 +35,7 @@ def get_kubectl_credentials(project_id, region, cluster_name):
         subprocess.check_call(command)
         logger.info(f"Successfully fetched credentials for cluster: {cluster_name}")
     except subprocess.CalledProcessError as e:
-        logger.info("Error fetching kubectl credentials:", e)
+        logger.info(f"Error fetching kubectl credentials: {e}")
 
 
 def get_snapshot_source_pv_and_zone(project_id, region, cluster_id, namespace):
@@ -304,19 +306,37 @@ def create_disk_pv_pvc(project, zone, cluster_name, snapshot_name, prefix, names
                 logger.error(f"Task generated an exception: {e}")
 
     # start a self deleteing job to mount the xfs disks for repairing
-
+def parse_args():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=__doc__,
+    )
+    parser.add_argument("--network", required=True, choices=["testnet", "mainnet"])
+    args = parser.parse_args()
+    return args
 
 if __name__ == "__main__":
+    # check input arg network
+    args = parse_args()
+    network = args.network
     source_project_id = "aptos-platform-compute-0"
     region = "us-central1"
-    source_cluster_id = "general-usce1-0"
-    source_namespace = "testnet-pfn-usce1-backup"
     project_id = "aptos-devinfra-0"
-    snapshot_name = "testnet-archive"
-    new_pv_prefix = "testnet-archive"
     target_namespace = "default"
     zone = "us-central1-a"
     cluster_name = "devinfra-usce1-0"
+
+    if network == "testnet":
+        source_cluster_id = "general-usce1-0"
+        source_namespace = "testnet-pfn-usce1-backup"
+        snapshot_name = "testnet-archive"
+        new_pv_prefix = "testnet-archive"
+    else: 
+        source_cluster_id = "mainnet-usce1-0"
+        source_namespace = "mainnet-pfn-usce1-backup"
+        snapshot_name = "mainnet-archive"
+        new_pv_prefix = "mainnet-archive"
+        
     create_snapshot_with_gcloud(
         snapshot_name,
         source_project_id,
