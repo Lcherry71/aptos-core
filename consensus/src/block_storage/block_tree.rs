@@ -78,7 +78,7 @@ pub struct BlockTree {
     ordered_root_id: HashValue,
     /// Commit Root id: this is the root of commit phase
     commit_root_id: HashValue,
-    /// Window Root id: this is the parent_id of the first item in the [`OrderedBlockWindow`](OrderedBlockWindow)
+    /// Window Root id: this is the `parent_id` of the first item in the [`OrderedBlockWindow`](OrderedBlockWindow)
     window_root_id: HashValue,
     /// A certified block id with highest round
     highest_certified_block_id: HashValue,
@@ -506,36 +506,31 @@ impl BlockTree {
         self.window_root_id = root_id;
     }
 
+    /// `window_root` is the parent_id of the first block in the [OrderedBlockWindow](OrderedBlockWindow)
+    ///
+    /// ```text
+    ///              ┌──────────────────┐
+    ///  Genesis ──> │ A1 ──> A2 ──> A3 │ ──> A4
+    ///              └──────────────────┘
+    ///      ↑                 ↑               ↑
+    /// window_root      block_window   block_to_commit
+    /// ```
     pub(super) fn find_window_root(
         &self,
-        commit_round: Round,
-        commit_root_id: HashValue,
+        block_to_commit_id: HashValue,
         window_size: usize,
-    ) -> HashValue {
+    ) -> Option<HashValue> {
         assert_ne!(window_size, 0, "Window size must be greater than 0");
-        let window_start_round = commit_round
-            .saturating_add(1)
-            .saturating_sub(window_size as u64);
-        let mut window_start_id = HashValue::zero();
-        let mut curr_block_id = commit_root_id;
-        info!("Start at commit_root_id: {}", curr_block_id);
-        while let Some(block) = self.get_block(&curr_block_id) {
-            if block.round() < window_start_round {
-                window_start_id = curr_block_id;
-                break;
-            }
 
-            window_start_id = curr_block_id;
-            curr_block_id = block.parent_id();
-        }
-        // TODO: panic or bail?
-        assert_ne!(
-            window_start_id,
-            HashValue::zero(),
-            "Window start block not found"
-        );
-
-        window_start_id
+        // Try to get the block, then the ordered window, then the first block's parent ID
+        self.get_block(&block_to_commit_id)
+            .and_then(|pipelined_block| {
+                self.get_ordered_block_window(pipelined_block.block(), window_size)
+            })
+            .and_then(|ordered_block_window| {
+                let pipelined_block = ordered_block_window.pipelined_blocks().first();
+                pipelined_block.map(|block| block.parent_id())
+            })
     }
 
     /// Process the data returned by the prune_tree, they're separated because caller might
@@ -632,9 +627,11 @@ impl BlockTree {
 
         let block_id = last_block.id();
         let block_round = last_block.round();
-        let window_root_id =
-            self.find_window_root(committed_round, block_to_commit.id(), window_size);
+        let window_root_id = self
+            .find_window_root(block_to_commit.id(), window_size)
+            .expect("Window root id not found");
         info!("Updating to window_root_id: {}", window_root_id);
+
         let ids_to_remove = self.find_blocks_to_prune(window_root_id);
         info!("Pruning blocks: {:?}", ids_to_remove);
         if let Err(e) = storage.prune_tree(ids_to_remove.clone().into_iter().collect()) {
