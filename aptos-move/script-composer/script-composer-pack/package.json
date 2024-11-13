@@ -1,0 +1,44 @@
+{
+  "name": "@wgb5445/aptos-intent-npm",
+  "collaborators": [
+    "Aptos Labs <opensource@aptoslabs.com>"
+  ],
+  "description": "Generating Move Script from intent",
+  "version": "0.1.13",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aptos-labs/aptos-core"
+  },
+  "files": [
+    "dist",
+    "main.mts",
+    "tsconfig.json",
+    "tsup.config.ts"
+  ],
+  "module": "dist/esm/main.mjs",
+  "types": "dist/main.d.ts",
+  "homepage": "https://aptoslabs.com",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "devDependencies": {
+    "@rollup/plugin-wasm": "^6.2.2",
+    "tsc": "^2.0.4",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/esm/main.mjs",
+      "default": "./dist/cjs/main.js"
+    }
+  },
+  "scripts": {
+    "build": "npx tsup"
+  },
+  "dependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
