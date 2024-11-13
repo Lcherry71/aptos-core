@@ -14,6 +14,7 @@ use aptos_consensus_types::{
     pipelined_block::{OrderedBlockWindow, PipelinedBlock},
     quorum_cert::QuorumCert,
     timeout_2chain::TwoChainTimeoutCertificate,
+    vote_data::VoteData,
     wrapped_ledger_info::WrappedLedgerInfo,
 };
 use aptos_crypto::HashValue;
