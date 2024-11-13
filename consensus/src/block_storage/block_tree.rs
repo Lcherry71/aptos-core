@@ -78,6 +78,7 @@ pub struct BlockTree {
     ordered_root_id: HashValue,
     /// Commit Root id: this is the root of commit phase
     commit_root_id: HashValue,
+    /// Window Root id: this is the parent_id of the first item in the [`OrderedBlockWindow`](OrderedBlockWindow)
     window_root_id: HashValue,
     /// A certified block id with highest round
     highest_certified_block_id: HashValue,
