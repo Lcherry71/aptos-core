@@ -71,7 +71,9 @@ pub struct TransactionStore {
     // We divide the senders into buckets and maintain a separate set of timelines for each sender bucket.
     // This is the number of sender buckets.
     num_sender_buckets: MempoolSenderBucket,
-    // keeps track of "non-ready" txns (transactions that can't be included in next block)
+    // Keeps track of "non-ready" txns (transactions that can't be included in next block).
+    // Orderless transactions (transactions with nonce replay protector) are always "ready", and are not
+    // stored in the parking lot.
     parking_lot_index: ParkingLotIndex,
     // Index for looking up transaction by hash.
     // Transactions are stored by AccountAddress + replay protector.
@@ -270,7 +272,7 @@ impl TransactionStore {
             }
         }
 
-        if self.check_is_full_after_eviction(&txn, acc_seq_num) {
+        if self.check_is_full_after_eviction(&txn, account_sequence_number) {
             return MempoolStatus::new(MempoolStatusCode::MempoolIsFull).with_message(format!(
                 "Mempool is full. Mempool size: {}, Capacity: {}",
                 self.system_ttl_index.size(),
@@ -362,9 +364,9 @@ impl TransactionStore {
     fn check_is_full_after_eviction(
         &mut self,
         txn: &MempoolTransaction,
-        curr_sequence_number: u64,
+        account_sequence_number: AccountSequenceNumberInfo,
     ) -> bool {
-        if self.is_full() && self.check_txn_ready(txn, curr_sequence_number) {
+        if self.is_full() && self.check_txn_ready(txn, account_sequence_number) {
             let now = Instant::now();
             // try to free some space in Mempool from ParkingLot by evicting non-ready txns
             let mut evicted_txns = 0;
@@ -373,7 +375,7 @@ impl TransactionStore {
                 if let Some(txn) = self
                     .transactions
                     .get_mut(&txn_pointer.sender)
-                    .and_then(|txns| txns.remove(&txn_pointer.sequence_number))
+                    .and_then(|txns| txns.remove(&txn_pointer.replay_protector))
                 {
                     debug!(
                         LogSchema::new(LogEntry::MempoolFullEvictedTxn).txns(TxnsLog::new_txn(
@@ -412,24 +414,37 @@ impl TransactionStore {
     /// (this handles both cases where, (1) txn is first possible txn for an account and (2) the
     /// previous txn is committed).
     /// 2. The txn before this is ready for broadcast but not yet committed.
-    fn check_txn_ready(&self, txn: &MempoolTransaction, curr_sequence_number: u64) -> bool {
-        let tx_sequence_number = txn.sequence_info.transaction_sequence_number;
-        if tx_sequence_number == curr_sequence_number {
-            return true;
-        } else if tx_sequence_number == 0 {
-            // shouldn't really get here because filtering out old txn sequence numbers happens earlier in workflow
-            unreachable!("[mempool] already committed txn detected, cannot be checked for readiness upon insertion");
-        }
-
-        // check previous txn in sequence is ready
-        if let Some(account_txns) = self.transactions.get(&txn.get_sender()) {
-            if let Some(prev_txn) = account_txns.get(&(tx_sequence_number - 1)) {
-                if let TimelineState::Ready(_) = prev_txn.timeline_state {
-                    return true;
+    fn check_txn_ready(&self, txn: &MempoolTransaction, account_sequence_number: AccountSequenceNumberInfo) -> bool {
+        let tx_replay_protector = txn.sequence_info.transaction_replay_protector;
+        match tx_replay_protector {
+            ReplayProtector::SequenceNumber(tx_sequence_number) => {
+                if let AccountSequenceNumberInfo::Required(account_sequence_number) = account_sequence_number {
+                    if tx_sequence_number == account_sequence_number {
+                        return true;
+                    } else if tx_sequence_number == 0 {
+                        // shouldn't really get here because filtering out old txn sequence numbers happens earlier in workflow
+                        unreachable!("[mempool] already committed txn detected, cannot be checked for readiness upon insertion");
+                    }
+            
+                    // check previous txn in sequence is ready
+                    if let Some(account_txns) = self.transactions.get(&txn.get_sender()) {
+                        let prev_seq_number = ReplayProtector::SequenceNumber(tx_sequence_number - 1);
+                        if let Some(prev_txn) = account_txns.get(&prev_seq_number) {
+                            if let TimelineState::Ready(_) = prev_txn.timeline_state {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                } else {
+                    unreachable!("Account sequence number is always provided for transactions with sequence number");
                 }
+            },
+            ReplayProtector::Nonce(_) => {
+                // Nonce based transactions are always ready for broadcast
+                true
             }
         }
-        false
     }
 
     fn log_ready_transaction(
@@ -841,8 +856,8 @@ impl TransactionStore {
             .inc();
 
         let mut gc_txns = index.gc(now);
-        // sort the expired txns by order of sequence number per account
-        gc_txns.sort_by_key(|key| (key.address, key.sequence_number));
+        // sort the expired txns by order of replay protector per account
+        gc_txns.sort_by_key(|key| (key.address, key.replay_protector));
         let mut gc_iter = gc_txns.iter().peekable();
 
         let mut gc_txns_log = match aptos_logger::enabled!(Level::Trace) {
@@ -851,12 +866,12 @@ impl TransactionStore {
         };
         while let Some(key) = gc_iter.next() {
             if let Some(txns) = self.transactions.get_mut(&key.address) {
-                let park_range_start = Bound::Excluded(key.sequence_number);
+                let park_range_start = Bound::Excluded(key.replay_protector);
                 let park_range_end = gc_iter
                     .peek()
                     .filter(|next_key| key.address == next_key.address)
                     .map_or(Bound::Unbounded, |next_key| {
-                        Bound::Excluded(next_key.sequence_number)
+                        Bound::Excluded(next_key.replay_protector)
                     });
                 // mark all following txns as non-ready, i.e. park them
                 for (_, t) in txns.range_mut((park_range_start, park_range_end)) {

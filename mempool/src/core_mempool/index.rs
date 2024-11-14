@@ -145,11 +145,12 @@ impl TTLIndex {
 
     /// Garbage collect all old transactions.
     pub(crate) fn gc(&mut self, now: Duration) -> Vec<TTLOrderingKey> {
+        // Ideally, we should garbage collect all transactions with expiration time < now.
+        let max_expiration_time = now.saturating_sub(Duration::from_micros(1));
         let ttl_key = TTLOrderingKey {
-            expiration_time: now,
+            expiration_time: max_expiration_time,
             address: AccountAddress::ZERO,
-            // TODO: Check how the comparision works between sequence numbers and nonces work
-            replay_protector: ReplayProtector::SequenceNumber(0),
+            replay_protector: ReplayProtector::Nonce(0),
         };
 
         let mut active = self.data.split_off(&ttl_key);

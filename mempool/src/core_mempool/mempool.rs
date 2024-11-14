@@ -297,7 +297,7 @@ impl Mempool {
             // don't accept old transactions (e.g. seq is less than account's current seq_number)
             match &account_sequence_number {
                 AccountSequenceNumberInfo::Required(account_sequence_number) => {
-                    if txn_seq_num < account_sequence_number {
+                    if txn_seq_num < *account_sequence_number {
                         return MempoolStatus::new(MempoolStatusCode::InvalidSeqNumber).with_message(
                             format!(
                                 "transaction sequence number is {}, current sequence number is  {}",
@@ -375,17 +375,18 @@ impl Mempool {
     fn txn_was_chosen(
         account_address: AccountAddress,
         sequence_number: u64,
-        inserted: &HashSet<(AccountAddress, u64)>,
+        inserted: &HashSet<(AccountAddress, ReplayProtector)>,
         exclude_transactions: &BTreeMap<TransactionSummary, TransactionInProgress>,
     ) -> bool {
-        if inserted.contains(&(account_address, sequence_number)) {
+        if inserted.contains(&(account_address, ReplayProtector::SequenceNumber(sequence_number))) {
             return true;
         }
 
-        let min_inclusive = TxnPointer::new(account_address, sequence_number, HashValue::zero());
+        // TODO: Make sure this range search works as expected
+        let min_inclusive = TxnPointer::new(account_address, ReplayProtector::SequenceNumber(sequence_number), HashValue::zero());
         let max_exclusive = TxnPointer::new(
             account_address,
-            sequence_number.saturating_add(1),
+            ReplayProtector::SequenceNumber(sequence_number.saturating_add(1)),
             HashValue::zero(),
         );
 
