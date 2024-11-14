@@ -24,6 +24,7 @@ use aptos_types::{
 };
 use dashmap::DashMap;
 use itertools::Itertools;
+use rayon::prelude::*;
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 /// Helper class for calculating state changes after a block of transactions are executed.
@@ -259,17 +260,26 @@ impl InMemoryStateCalculatorV2 {
             return StateStorageUsage::new_untracked();
         }
 
-        let mut items_delta = 0i64;
-        let mut bytes_delta = 0i64;
-        for (key, value) in updates {
-            Self::add_to_delta(
-                key,
-                value,
-                sharded_state_cache.shard(key.get_shard_id()),
-                &mut items_delta,
-                &mut bytes_delta,
+        let (items_delta, bytes_delta) = (0..16)
+            .into_par_iter()
+            .map(|shard_id| {
+                let cache = sharded_state_cache.shard(shard_id);
+                let mut items_delta = 0;
+                let mut bytes_delta = 0;
+                updates
+                    .iter()
+                    .filter(|(k, _v)| k.get_shard_id() == shard_id)
+                    .for_each(|(key, value)| {
+                        Self::add_to_delta(key, value, cache, &mut items_delta, &mut bytes_delta)
+                    });
+                (items_delta, bytes_delta)
+            })
+            .reduce(
+                || (0, 0),
+                |(i1, b1), (i2, b2)| {
+                    (i1 + i2, b1 + b2)
+                },
             );
-        }
 
         StateStorageUsage::new(
             (old_usage.items() as i64 + items_delta) as usize,
