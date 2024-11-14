@@ -18,7 +18,7 @@ pub const TXN_FIXED_ESTIMATED_BYTES: usize = size_of::<MempoolTransaction>();
 // This is the sequence number for an account.
 // For the sender of regular transactions, the sequence number is required.
 // For the sender of orderless transactions, we don't calculate the sequence number.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum AccountSequenceNumberInfo {
     // Question: Please suggest some better names.
     Required(u64),
@@ -165,14 +165,14 @@ impl InsertionInfo {
 #[cfg(test)]
 mod test {
     use crate::{
-        core_mempool::{MempoolTransaction, TimelineState},
+        core_mempool::{MempoolTransaction, AccountSequenceNumberInfo, TimelineState},
         network::BroadcastPeerPriority,
     };
     use aptos_crypto::{ed25519::Ed25519PrivateKey, PrivateKey, SigningKey, Uniform};
     use aptos_types::{
         account_address::AccountAddress,
         chain_id::ChainId,
-        transaction::{RawTransaction, Script, SignedTransaction, TransactionPayload},
+        transaction::{RawTransaction, Script, SignedTransaction, TransactionPayload, ReplayProtector},
     };
     use std::time::{Duration, SystemTime};
 
@@ -187,12 +187,16 @@ mod test {
     }
 
     fn create_test_mempool_transaction(signed_txn: SignedTransaction) -> MempoolTransaction {
+        let account_sequence_number = match signed_txn.replay_protector() {
+            ReplayProtector::SequenceNumber(_) => AccountSequenceNumberInfo::Required(0),
+            ReplayProtector::Nonce(_) => AccountSequenceNumberInfo::NotRequired,
+        };
         MempoolTransaction::new(
             signed_txn,
             Duration::from_secs(1),
             1,
             TimelineState::NotReady,
-            0,
+            account_sequence_number,
             SystemTime::now(),
             false,
             Some(BroadcastPeerPriority::Primary),

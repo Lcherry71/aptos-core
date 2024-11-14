@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-    core_mempool::CoreMempool,
+    core_mempool::{AccountSequenceNumberInfo, CoreMempool},
     shared_mempool::{
         start_shared_mempool,
         types::{MempoolMessageId, MempoolSenderBucket},
@@ -685,7 +685,7 @@ pub fn test_transaction(seq_num: u64) -> TestTransaction {
         address: TestTransaction::get_address(1),
         replay_protector: ReplayProtector::SequenceNumber(seq_num),
         gas_price: 1,
-        account_seqno: 0,
+        account_seqno: AccountSequenceNumberInfo::Required(0),
         script: None,
     }
 }

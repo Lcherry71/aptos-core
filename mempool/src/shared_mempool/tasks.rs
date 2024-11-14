@@ -343,7 +343,7 @@ where
                 match account_sequence_num {
                     AccountSequenceNumberInfo::Required(sequence_num) => {
                         if t.sequence_number() >= sequence_num {
-                            return Some((t, sequence_num, ready_time_at_sender, priority));
+                            return Some((t, AccountSequenceNumberInfo::Required(sequence_num), ready_time_at_sender, priority));
                         } else {
                             statuses.push((
                                 t,
@@ -353,10 +353,9 @@ where
                                 ),
                             ));
                         }
-                        Some((t, AccountSequenceNumberInfo::Required(sequence_num), ready_time_at_sender, priority))
                     },
                     AccountSequenceNumberInfo::NotRequired => {
-                        Some((t, AccountSequenceNumberInfo::NotRequired, ready_time_at_sender, priority))
+                        return Some((t, AccountSequenceNumberInfo::NotRequired, ready_time_at_sender, priority));
                     },
                 }
             } else {

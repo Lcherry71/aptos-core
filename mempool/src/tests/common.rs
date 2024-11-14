@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-    core_mempool::{CoreMempool, TimelineState},
+    core_mempool::{AccountSequenceNumberInfo, CoreMempool, TimelineState},
     network::{BroadcastPeerPriority, MempoolSyncMsg},
 };
 use anyhow::{format_err, Result};
@@ -12,10 +12,7 @@ use aptos_config::config::{NodeConfig, MAX_APPLICATION_MESSAGE_SIZE};
 use aptos_consensus_types::common::{TransactionInProgress, TransactionSummary};
 use aptos_crypto::{ed25519::Ed25519PrivateKey, PrivateKey, Uniform};
 use aptos_types::{
-    account_address::AccountAddress,
-    chain_id::ChainId,
-    mempool_status::MempoolStatusCode,
-    transaction::{RawTransaction, ReplayProtector, Script, SignedTransaction, TransactionArgument},
+    account_address::AccountAddress, chain_id::ChainId, mempool_status::MempoolStatusCode, transaction::{RawTransaction, ReplayProtector, Script, SignedTransaction, TransactionArgument, TransactionExecutable},
 };
 use once_cell::sync::Lazy;
 use rand::{rngs::StdRng, SeedableRng};
@@ -68,17 +65,22 @@ pub struct TestTransaction {
     pub(crate) address: AccountAddress,
     pub(crate) replay_protector: ReplayProtector,
     pub(crate) gas_price: u64,
-    pub(crate) account_seqno: u64,
+    pub(crate) account_seqno: AccountSequenceNumberInfo,
     pub(crate) script: Option<Script>,
 }
 
 impl TestTransaction {
     pub(crate) fn new(address: usize, replay_protector: ReplayProtector, gas_price: u64) -> Self {
+        let account_seqno = match replay_protector {
+            ReplayProtector::SequenceNumber(_) => AccountSequenceNumberInfo::Required(0),
+            ReplayProtector::Nonce(_) => AccountSequenceNumberInfo::NotRequired,
+        };
+
         Self {
             address: TestTransaction::get_address(address),
             replay_protector,
             gas_price,
-            account_seqno: 0,
+            account_seqno,
             script: None,
         }
     }
@@ -92,7 +94,10 @@ impl TestTransaction {
             address: TestTransaction::get_address(address),
             replay_protector,
             gas_price,
-            account_seqno: 0,
+            account_seqno: match replay_protector {
+                ReplayProtector::SequenceNumber(_) => AccountSequenceNumberInfo::Required(0),
+                ReplayProtector::Nonce(_) => AccountSequenceNumberInfo::NotRequired,
+            },
             script: Some(LARGE_SCRIPT.clone()),
         }
     }
@@ -106,7 +111,10 @@ impl TestTransaction {
             address: TestTransaction::get_address(address),
             replay_protector,
             gas_price,
-            account_seqno: 0,
+            account_seqno: match replay_protector {
+                ReplayProtector::SequenceNumber(_) => AccountSequenceNumberInfo::Required(0),
+                ReplayProtector::Nonce(_) => AccountSequenceNumberInfo::NotRequired,
+            },
             script: Some(HUGE_SCRIPT.clone()),
         }
     }
@@ -120,7 +128,10 @@ impl TestTransaction {
             address,
             replay_protector,
             gas_price,
-            account_seqno: 0,
+            account_seqno: match replay_protector {
+                ReplayProtector::SequenceNumber(_) => AccountSequenceNumberInfo::Required(0),
+                ReplayProtector::Nonce(_) => AccountSequenceNumberInfo::NotRequired,
+            },
             script: None,
         }
     }
@@ -148,10 +159,11 @@ impl TestTransaction {
         max_gas_amount: u64,
         exp_timestamp_secs: u64,
     ) -> SignedTransaction {
-        let raw_txn = RawTransaction::new_script(
+        let raw_txn = RawTransaction::new_txn(
             self.address,
-            self.sequence_number,
-            self.script.clone().unwrap_or(SMALL_SCRIPT.clone()),
+            self.replay_protector,
+            TransactionExecutable::Script(self.script.clone().unwrap_or(SMALL_SCRIPT.clone())),
+            None,
             max_gas_amount,
             self.gas_price,
             exp_timestamp_secs,
@@ -212,7 +224,10 @@ pub(crate) fn add_signed_txn(pool: &mut CoreMempool, transaction: SignedTransact
         .add_txn(
             transaction.clone(),
             transaction.gas_unit_price(),
-            0,
+            match transaction.replay_protector() {
+                ReplayProtector::SequenceNumber(_) => AccountSequenceNumberInfo::Required(0),
+                ReplayProtector::Nonce(_) => AccountSequenceNumberInfo::NotRequired,
+            },
             TimelineState::NotReady,
             false,
             None,
