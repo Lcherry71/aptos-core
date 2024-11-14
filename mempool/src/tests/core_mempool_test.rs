@@ -15,7 +15,7 @@ use aptos_consensus_types::common::{TransactionInProgress, TransactionSummary};
 use aptos_crypto::HashValue;
 use aptos_types::{
     account_address::AccountAddress, mempool_status::MempoolStatusCode,
-    transaction::SignedTransaction, vm_status::DiscardedVMStatus,
+    transaction::{ReplayProtector, SignedTransaction}, vm_status::DiscardedVMStatus,
 };
 use itertools::Itertools;
 use maplit::btreemap;
@@ -191,7 +191,7 @@ fn test_commit_transaction() {
         TestTransaction::new(0, 1, 2),
     ]);
     for txn in txns {
-        pool.commit_transaction(&txn.sender(), txn.sequence_number());
+        pool.commit_transaction(&txn.sender(), txn.replay_protector());
     }
     let new_txns = add_txns_to_mempool(&mut pool, vec![
         TestTransaction::new(1, 0, 3),
@@ -220,7 +220,7 @@ fn test_reject_transaction() {
     // reject with wrong hash should have no effect
     pool.reject_transaction(
         &TestTransaction::get_address(0),
-        0,
+        Replay,
         &txns[1].committed_hash(), // hash of other txn
         &DiscardedVMStatus::MALFORMED,
     );

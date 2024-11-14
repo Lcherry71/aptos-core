@@ -15,7 +15,7 @@ use aptos_types::{
     account_address::AccountAddress,
     chain_id::ChainId,
     mempool_status::MempoolStatusCode,
-    transaction::{RawTransaction, Script, SignedTransaction, TransactionArgument},
+    transaction::{RawTransaction, ReplayProtector, Script, SignedTransaction, TransactionArgument},
 };
 use once_cell::sync::Lazy;
 use rand::{rngs::StdRng, SeedableRng};
@@ -66,17 +66,17 @@ static HUGE_SCRIPT: Lazy<Script> = Lazy::new(|| {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TestTransaction {
     pub(crate) address: AccountAddress,
-    pub(crate) sequence_number: u64,
+    pub(crate) replay_protector: ReplayProtector,
     pub(crate) gas_price: u64,
     pub(crate) account_seqno: u64,
     pub(crate) script: Option<Script>,
 }
 
 impl TestTransaction {
-    pub(crate) fn new(address: usize, sequence_number: u64, gas_price: u64) -> Self {
+    pub(crate) fn new(address: usize, replay_protector: ReplayProtector, gas_price: u64) -> Self {
         Self {
             address: TestTransaction::get_address(address),
-            sequence_number,
+            replay_protector,
             gas_price,
             account_seqno: 0,
             script: None,
@@ -85,12 +85,12 @@ impl TestTransaction {
 
     pub(crate) fn new_with_large_script(
         address: usize,
-        sequence_number: u64,
+        replay_protector: ReplayProtector,
         gas_price: u64,
     ) -> Self {
         Self {
             address: TestTransaction::get_address(address),
-            sequence_number,
+            replay_protector,
             gas_price,
             account_seqno: 0,
             script: Some(LARGE_SCRIPT.clone()),
@@ -99,12 +99,12 @@ impl TestTransaction {
 
     pub(crate) fn new_with_huge_script(
         address: usize,
-        sequence_number: u64,
+        replay_protector: ReplayProtector,
         gas_price: u64,
     ) -> Self {
         Self {
             address: TestTransaction::get_address(address),
-            sequence_number,
+            replay_protector,
             gas_price,
             account_seqno: 0,
             script: Some(HUGE_SCRIPT.clone()),
@@ -113,12 +113,12 @@ impl TestTransaction {
 
     pub(crate) fn new_with_address(
         address: AccountAddress,
-        sequence_number: u64,
+        replay_protector: ReplayProtector,
         gas_price: u64,
     ) -> Self {
         Self {
             address,
-            sequence_number,
+            replay_protector,
             gas_price,
             account_seqno: 0,
             script: None,
@@ -252,7 +252,7 @@ impl ConsensusMock {
         let block = mempool.get_batch(max_txns, max_bytes, true, self.0.clone());
         block.iter().for_each(|t| {
             let txn_summary =
-                TransactionSummary::new(t.sender(), t.sequence_number(), t.committed_hash());
+                TransactionSummary::new(t.sender(), t.replay_protector(), t.committed_hash());
             let txn_info = TransactionInProgress::new(t.gas_unit_price());
             self.0.insert(txn_summary, txn_info);
         });

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-    core_mempool::{CoreMempool, TimelineState},
+    core_mempool::{CoreMempool, TimelineState, AccountSequenceNumberInfo},
     network::{BroadcastPeerPriority, MempoolSyncMsg},
     shared_mempool::{start_shared_mempool, types::SharedMempoolNotification},
     tests::common::TestTransaction,
@@ -34,8 +34,7 @@ use aptos_network::{
 };
 use aptos_storage_interface::mock::MockDbReaderWriter;
 use aptos_types::{
-    on_chain_config::{InMemoryOnChainConfig, OnChainConfigPayload},
-    PeerId,
+    on_chain_config::{InMemoryOnChainConfig, OnChainConfigPayload}, transaction::ReplayProtector, PeerId
 };
 use aptos_vm_validator::mocks::mock_vm_validator::MockVMValidator;
 use enum_dispatch::enum_dispatch;
@@ -376,10 +375,14 @@ impl Node {
         let mut mempool = self.mempool();
         for txn in txns {
             let transaction = txn.make_signed_transaction_with_max_gas_amount(5);
+            let account_sequence_number = match transaction.replay_protector() {
+                ReplayProtector::SequenceNumber(_) => AccountSequenceNumberInfo::Required(0),
+                ReplayProtector::Nonce(_) => AccountSequenceNumberInfo::NotRequired,
+            };
             mempool.add_txn(
                 transaction.clone(),
                 transaction.gas_unit_price(),
-                0,
+                account_sequence_number,
                 TimelineState::NotReady,
                 false,
                 None,

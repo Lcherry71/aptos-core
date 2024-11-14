@@ -206,7 +206,7 @@ impl MockSharedMempool {
 
     pub fn remove_txn(&self, txn: &SignedTransaction) {
         let mut pool = self.mempool.lock();
-        pool.commit_transaction(&txn.sender(), txn.sequence_number())
+        pool.commit_transaction(&txn.sender(), txn.replay_protector())
     }
 }
 

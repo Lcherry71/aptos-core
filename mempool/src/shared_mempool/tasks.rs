@@ -643,13 +643,13 @@ pub(crate) fn process_committed_transactions(
     for transaction in transactions {
         pool.log_commit_transaction(
             &transaction.sender,
-            transaction.sequence_number,
+            transaction.replay_protector,
             tracking_usecases
                 .get(&transaction.use_case)
                 .map(|name| (transaction.use_case.clone(), name)),
             block_timestamp,
         );
-        pool.commit_transaction(&transaction.sender, transaction.sequence_number);
+        pool.commit_transaction(&transaction.sender, transaction.replay_protector);
     }
 
     if block_timestamp_usecs > 0 {
@@ -666,7 +666,7 @@ pub(crate) fn process_rejected_transactions(
     for transaction in transactions {
         pool.reject_transaction(
             &transaction.sender,
-            transaction.sequence_number,
+            transaction.replay_protector,
             &transaction.hash,
             &transaction.reason,
         );
