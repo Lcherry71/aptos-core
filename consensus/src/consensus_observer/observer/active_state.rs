@@ -349,8 +349,7 @@ mod test {
     use aptos_consensus_types::{
         block::Block,
         block_data::{BlockData, BlockType},
-        pipelined_block::PipelinedBlock,
-        pipelined_block::OrderedBlockWindow,
+        pipelined_block::{OrderedBlockWindow, PipelinedBlock},
         quorum_cert::QuorumCert,
     };
     use aptos_crypto::HashValue;

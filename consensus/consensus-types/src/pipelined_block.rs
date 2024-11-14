@@ -227,9 +227,9 @@ impl<'de> Deserialize<'de> for PipelinedBlock {
             pipeline_insertion_time: OnceCell::new(),
             execution_summary: Arc::new(OnceCell::new()),
             pre_commit_fut: Arc::new(Mutex::new(None)),
-            pipeline_futures: Arc::new(Mutex::new(None)),
-            pipeline_tx: None,
-            pipeline_abort_handle: None,
+            pipeline_futs: Arc::new(Mutex::new(None)),
+            pipeline_tx: Arc::new(Mutex::new(None)),
+            pipeline_abort_handle: Arc::new(Mutex::new(None)),
         };
         if let Some(r) = randomness {
             block.set_randomness(r);
@@ -390,9 +390,9 @@ impl PipelinedBlock {
             pipeline_insertion_time: OnceCell::new(),
             execution_summary: Arc::new(OnceCell::new()),
             pre_commit_fut: Arc::new(Mutex::new(None)),
-            pipeline_futures: Arc::new(Mutex::new(None)),
-            pipeline_tx: None,
-            pipeline_abort_handle: None,
+            pipeline_futs: Arc::new(Mutex::new(None)),
+            pipeline_tx: Arc::new(Mutex::new(None)),
+            pipeline_abort_handle: Arc::new(Mutex::new(None)),
         }
     }
 

@@ -14,7 +14,6 @@ use aptos_consensus_types::{
     pipelined_block::{OrderedBlockWindow, PipelinedBlock},
     quorum_cert::QuorumCert,
     timeout_2chain::TwoChainTimeoutCertificate,
-    vote_data::VoteData,
     wrapped_ledger_info::WrappedLedgerInfo,
 };
 use aptos_crypto::HashValue;
@@ -628,9 +627,14 @@ impl BlockTree {
 
         let block_id = last_block.id();
         let block_round = last_block.round();
-        let window_root_id = self
-            .find_window_root(block_to_commit.id(), window_size)
-            .expect("Window root id not found");
+
+        // TODO blocks_to_commit changed from being a single block to a vector of blocks after
+        // Zekun's pipeline commit. Make sure this is rebased correctly and the last block can
+        // be used here for find_window_root
+        let last_block_id_to_commit = blocks_to_commit.last().map(|block| block.id());
+        let window_root_id = last_block_id_to_commit
+            .and_then(|id| self.find_window_root(id, window_size))
+            .expect("Window root id not found or last_block_id_to_commit not found");
         info!("Updating to window_root_id: {}", window_root_id);
 
         let ids_to_remove = self.find_blocks_to_prune(window_root_id);

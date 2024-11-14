@@ -94,7 +94,6 @@ pub struct BlockStore {
     pending_blocks: Arc<Mutex<PendingBlocks>>,
     /// Window Size for Execution Pool
     window_size: usize,
-    pending_blocks: Arc<Mutex<PendingBlocks>>,
     pipeline_builder: Option<PipelineBuilder>,
 }
 
@@ -393,7 +392,18 @@ impl BlockStore {
                 .prefetch_payload_data(payload, block.timestamp_usecs());
         }
 
-        let pipelined_block = PipelinedBlock::new_ordered(block.clone());
+        let ordered_block_window = self
+            .inner
+            .read()
+            .get_ordered_block_window(&block, self.window_size)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Unable to retrieve the OrderedBlockWindow for block: {}",
+                    block.clone()
+                )
+            });
+
+        let pipelined_block = PipelinedBlock::new_ordered(block.clone(), ordered_block_window);
 
         // build pipeline
         if let Some(pipeline_builder) = &self.pipeline_builder {
