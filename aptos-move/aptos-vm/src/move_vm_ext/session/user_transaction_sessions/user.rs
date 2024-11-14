@@ -24,7 +24,10 @@ use move_binary_format::{compatibility::Compatibility, errors::Location, Compile
 use move_core_types::{
     account_address::AccountAddress, ident_str, value::MoveValue, vm_status::VMStatus,
 };
-use move_vm_runtime::{module_traversal::TraversalContext, ModuleStorage, StagingModuleStorage};
+use move_vm_runtime::{
+    module_traversal::TraversalContext,
+    storage::{module_storage::ModuleStorage, publishing::StagingModuleStorage},
+};
 
 #[derive(Deref, DerefMut)]
 pub struct UserSession<'r, 'l> {

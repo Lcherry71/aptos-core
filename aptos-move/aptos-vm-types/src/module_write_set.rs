@@ -11,7 +11,7 @@ use move_core_types::{
     account_address::AccountAddress, identifier::IdentStr, language_storage::ModuleId,
     vm_status::StatusCode,
 };
-use move_vm_runtime::ModuleStorage;
+use move_vm_runtime::storage::module_storage::ModuleStorage;
 use std::collections::BTreeMap;
 
 /// A write with a published module, also containing the information about its address and name.

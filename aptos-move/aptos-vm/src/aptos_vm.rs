@@ -119,7 +119,7 @@ use move_vm_metrics::{Timer, VM_TIMER};
 use move_vm_runtime::{
     logging::expect_no_verification_errors,
     module_traversal::{TraversalContext, TraversalStorage},
-    RuntimeEnvironment, WithRuntimeEnvironment,
+    storage::environment::{RuntimeEnvironment, WithRuntimeEnvironment},
 };
 use move_vm_types::gas::{GasMeter, UnmeteredGasMeter};
 use num_cpus;

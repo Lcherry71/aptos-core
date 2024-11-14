@@ -53,7 +53,10 @@ use aptos_vm_types::{
 };
 use bytes::Bytes;
 use claims::assert_ok;
-use move_binary_format::errors::{Location, VMResult};
+use move_binary_format::{
+    compatibility::Compatibility,
+    errors::{Location, VMResult},
+};
 use move_core_types::{
     account_address::AccountAddress,
     identifier::Identifier,
@@ -62,7 +65,10 @@ use move_core_types::{
 };
 use move_vm_runtime::{
     module_traversal::{TraversalContext, TraversalStorage},
-    ModuleStorage, RuntimeEnvironment, StagingModuleStorage,
+    storage::{
+        environment::RuntimeEnvironment, module_storage::ModuleStorage,
+        publishing::StagingModuleStorage,
+    },
 };
 use move_vm_types::gas::UnmeteredGasMeter;
 use once_cell::sync::Lazy;
@@ -992,7 +998,12 @@ fn publish_framework_with_loader_v1(
 
         #[allow(deprecated)]
         session
-            .publish_module_bundle(code, addr, &mut UnmeteredGasMeter)
+            .publish_module_bundle_with_compat_config(
+                code,
+                addr,
+                &mut UnmeteredGasMeter,
+                Compatibility::full_check(),
+            )
             .unwrap_or_else(|e| {
                 panic!(
                     "Failure publishing package `{}`: {:?}",

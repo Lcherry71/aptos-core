@@ -11,8 +11,9 @@ use crate::{
     module_traversal::TraversalContext,
     native_extensions::NativeContextExtensions,
     session::SerializedReturnValues,
-    storage::{code_storage::CodeStorage, module_storage::ModuleStorage},
-    RuntimeEnvironment,
+    storage::{
+        code_storage::CodeStorage, environment::RuntimeEnvironment, module_storage::ModuleStorage,
+    },
 };
 use move_binary_format::{
     access::ModuleAccess,

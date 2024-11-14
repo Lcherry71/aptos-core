@@ -21,7 +21,9 @@ use move_core_types::{
     language_storage::{ModuleId, CORE_CODE_ADDRESS},
     vm_status::StatusCode,
 };
-use move_vm_runtime::{config::VMConfig, move_vm::MoveVM, WithRuntimeEnvironment};
+use move_vm_runtime::{
+    config::VMConfig, move_vm::MoveVM, storage::environment::WithRuntimeEnvironment,
+};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 

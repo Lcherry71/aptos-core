@@ -9,7 +9,7 @@ use crate::{
     native_extensions::NativeContextExtensions,
     runtime::VMRuntime,
     session::Session,
-    RuntimeEnvironment,
+    storage::environment::RuntimeEnvironment,
 };
 use move_binary_format::{
     errors::{Location, PartialVMError, VMResult},

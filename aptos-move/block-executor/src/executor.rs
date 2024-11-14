@@ -58,7 +58,10 @@ use core::panic;
 use fail::fail_point;
 use move_binary_format::CompiledModule;
 use move_core_types::{language_storage::ModuleId, value::MoveTypeLayout, vm_status::StatusCode};
-use move_vm_runtime::{Module, RuntimeEnvironment, WithRuntimeEnvironment};
+use move_vm_runtime::{
+    storage::environment::{RuntimeEnvironment, WithRuntimeEnvironment},
+    Module,
+};
 use move_vm_types::code::ModuleCache;
 use num_cpus;
 use rayon::ThreadPool;

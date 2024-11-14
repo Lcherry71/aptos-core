@@ -37,7 +37,12 @@ use move_core_types::{
     vm_status::{StatusCode, VMStatus},
 };
 use move_vm_runtime::{
-    module_traversal::*, move_vm::MoveVM, AsUnsyncModuleStorage, RuntimeEnvironment,
+    module_traversal::*,
+    move_vm::MoveVM,
+    storage::{
+        environment::RuntimeEnvironment,
+        implementations::unsync_module_storage::AsUnsyncModuleStorage,
+    },
 };
 use move_vm_test_utils::InMemoryStorage;
 use move_vm_types::gas::UnmeteredGasMeter;
@@ -57,8 +62,11 @@ fn run_verifier(module: CompiledModule) -> Result<CompiledModule, String> {
 }
 
 // Creates a storage with Move standard library as well as a few additional modules.
-fn storage_with_stdlib_and_modules(additional_modules: Vec<&CompiledModule>) -> InMemoryStorage {
-    let mut storage = InMemoryStorage::new();
+fn storage_with_stdlib_and_modules(
+    additional_modules: Vec<&CompiledModule>,
+    runtime_environment: RuntimeEnvironment,
+) -> InMemoryStorage {
+    let mut storage = InMemoryStorage::new(runtime_environment);
 
     // First, compile and add standard library.
     let (_, compiled_units) = Compiler::from_files(
@@ -150,8 +158,8 @@ fn execute_function_in_module(
         let runtime_environment = RuntimeEnvironment::new(natives);
         let vm = MoveVM::new_with_runtime_environment(&runtime_environment);
 
-        let storage = storage_with_stdlib_and_modules(vec![&module]);
-        let module_storage = storage.as_unsync_module_storage(runtime_environment);
+        let storage = storage_with_stdlib_and_modules(vec![&module], runtime_environment);
+        let module_storage = storage.as_unsync_module_storage();
 
         let mut sess = vm.new_session(&storage);
         let traversal_storage = TraversalStorage::new();

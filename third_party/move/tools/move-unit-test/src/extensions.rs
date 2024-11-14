@@ -96,7 +96,8 @@ fn print_table_extension<W: Write>(w: &mut W, extensions: &mut NativeContextExte
 }
 
 #[cfg(feature = "table-extension")]
-static DUMMY_RESOLVER: Lazy<BlankStorage> = Lazy::new(|| BlankStorage);
+#[allow(clippy::redundant_closure)]
+static DUMMY_RESOLVER: Lazy<BlankStorage> = Lazy::new(|| BlankStorage::new());
 
 #[cfg(test)]
 mod tests {

@@ -23,7 +23,10 @@ use move_binary_format::{
 use move_core_types::{
     account_address::AccountAddress, identifier::IdentStr, language_storage::ModuleId,
 };
-use move_vm_runtime::{Module, RuntimeEnvironment, Script, WithRuntimeEnvironment};
+use move_vm_runtime::{
+    storage::environment::{RuntimeEnvironment, WithRuntimeEnvironment},
+    Module, Script,
+};
 use move_vm_types::code::{
     ambassador_impl_ScriptCache, Code, ModuleCache, ModuleCode, ModuleCodeBuilder, ScriptCache,
     WithBytes,

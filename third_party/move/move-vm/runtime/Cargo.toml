@@ -23,7 +23,6 @@ move-binary-format = { path = "../../move-binary-format" }
 once_cell = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
-sha3 = { workspace = true }
 triomphe = { workspace = true }
 typed-arena = { workspace = true }
 

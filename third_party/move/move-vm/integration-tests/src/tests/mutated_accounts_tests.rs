@@ -9,7 +9,12 @@ use move_core_types::{
     value::{serialize_values, MoveValue},
 };
 use move_vm_runtime::{
-    module_traversal::*, move_vm::MoveVM, AsUnsyncModuleStorage, RuntimeEnvironment,
+    module_traversal::*,
+    move_vm::MoveVM,
+    storage::{
+        environment::RuntimeEnvironment,
+        implementations::unsync_module_storage::AsUnsyncModuleStorage,
+    },
 };
 use move_vm_test_utils::InMemoryStorage;
 use move_vm_types::gas::UnmeteredGasMeter;
@@ -40,11 +45,12 @@ fn mutated_accounts() {
     let mut blob = vec![];
     m.serialize(&mut blob).unwrap();
 
-    let mut storage = InMemoryStorage::new();
-    storage.add_module_bytes(m.self_addr(), m.self_name(), blob.into());
-
     let runtime_environment = RuntimeEnvironment::new(vec![]);
     let vm = MoveVM::new_with_runtime_environment(&runtime_environment);
+
+    let mut storage = InMemoryStorage::new(runtime_environment);
+    storage.add_module_bytes(m.self_addr(), m.self_name(), blob.into());
+
     let mut sess = vm.new_session(&storage);
 
     let publish = Identifier::new("publish").unwrap();
@@ -54,9 +60,7 @@ fn mutated_accounts() {
     let account1 = AccountAddress::random();
     let traversal_storage = TraversalStorage::new();
 
-    let module_storage = storage
-        .clone()
-        .into_unsync_module_storage(runtime_environment);
+    let module_storage = storage.clone().into_unsync_module_storage();
     sess.execute_function_bypass_visibility(
         &m.self_id(),
         &publish,

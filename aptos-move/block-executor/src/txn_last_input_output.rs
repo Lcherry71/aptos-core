@@ -24,7 +24,7 @@ use crossbeam::utils::CachePadded;
 use dashmap::DashSet;
 use move_binary_format::CompiledModule;
 use move_core_types::{language_storage::ModuleId, value::MoveTypeLayout};
-use move_vm_runtime::{Module, RuntimeEnvironment};
+use move_vm_runtime::{storage::environment::RuntimeEnvironment, Module};
 use std::{
     collections::{BTreeMap, HashSet},
     fmt::Debug,

@@ -16,7 +16,10 @@ use aptos_vm_environment::{
     prod_configs::{aptos_default_ty_builder, aptos_prod_vm_config},
 };
 use aptos_vm_types::storage::change_set_configs::ChangeSetConfigs;
-use move_vm_runtime::{move_vm::MoveVM, RuntimeEnvironment, WithRuntimeEnvironment};
+use move_vm_runtime::{
+    move_vm::MoveVM,
+    storage::environment::{RuntimeEnvironment, WithRuntimeEnvironment},
+};
 use std::ops::Deref;
 
 /// Used by genesis to create runtime environment and VM ([GenesisMoveVM]), encapsulating all

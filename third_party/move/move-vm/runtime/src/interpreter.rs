@@ -9,7 +9,8 @@ use crate::{
     module_traversal::TraversalContext,
     native_extensions::NativeContextExtensions,
     native_functions::NativeContext,
-    trace, LoadedFunction, ModuleStorage,
+    storage::module_storage::ModuleStorage,
+    trace, LoadedFunction,
 };
 use fail::fail_point;
 use move_binary_format::{

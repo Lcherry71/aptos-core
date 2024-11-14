@@ -3,8 +3,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-    config::VMConfig, data_cache::TransactionDataCache, logging::expect_no_verification_errors,
-    module_traversal::TraversalContext, storage::module_storage::ModuleStorage, CodeStorage,
+    config::VMConfig,
+    data_cache::TransactionDataCache,
+    logging::expect_no_verification_errors,
+    module_traversal::TraversalContext,
+    storage::{code_storage::CodeStorage, module_storage::ModuleStorage},
 };
 use hashbrown::Equivalent;
 use lazy_static::lazy_static;

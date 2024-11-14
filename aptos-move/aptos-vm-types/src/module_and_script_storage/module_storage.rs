@@ -4,7 +4,7 @@
 use aptos_types::state_store::state_value::StateValueMetadata;
 use move_binary_format::errors::PartialVMResult;
 use move_core_types::{account_address::AccountAddress, identifier::IdentStr};
-use move_vm_runtime::ModuleStorage;
+use move_vm_runtime::storage::module_storage::ModuleStorage;
 
 /// Represents module storage used by the Aptos blockchain.
 pub trait AptosModuleStorage: ModuleStorage {

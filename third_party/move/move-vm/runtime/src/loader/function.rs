@@ -8,7 +8,7 @@ use crate::{
         Resolver, Script,
     },
     native_functions::{NativeFunction, NativeFunctions, UnboxedNativeFunction},
-    ModuleStorage,
+    storage::module_storage::ModuleStorage,
 };
 use move_binary_format::{
     access::ModuleAccess,

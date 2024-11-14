@@ -77,7 +77,7 @@ use move_core_types::{
 };
 use move_vm_runtime::{
     module_traversal::{TraversalContext, TraversalStorage},
-    ModuleStorage,
+    storage::module_storage::ModuleStorage,
 };
 use move_vm_types::gas::UnmeteredGasMeter;
 use serde::Serialize;

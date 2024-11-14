@@ -27,7 +27,10 @@ use move_binary_format::{
 use move_core_types::{
     account_address::AccountAddress, ident_str, language_storage::ModuleId, vm_status::VMStatus,
 };
-use move_vm_runtime::{Module, ModuleStorage, WithRuntimeEnvironment};
+use move_vm_runtime::{
+    storage::{environment::WithRuntimeEnvironment, module_storage::ModuleStorage},
+    Module,
+};
 use move_vm_types::code::WithSize;
 use parking_lot::{Mutex, MutexGuard};
 use std::{hash::Hash, ops::Deref, sync::Arc};

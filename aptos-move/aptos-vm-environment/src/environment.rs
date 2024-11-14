@@ -20,7 +20,10 @@ use aptos_types::{
     state_store::StateView,
 };
 use aptos_vm_types::storage::StorageGasParameters;
-use move_vm_runtime::{config::VMConfig, RuntimeEnvironment, WithRuntimeEnvironment};
+use move_vm_runtime::{
+    config::VMConfig,
+    storage::environment::{RuntimeEnvironment, WithRuntimeEnvironment},
+};
 use sha3::{Digest, Sha3_256};
 use std::sync::Arc;
 

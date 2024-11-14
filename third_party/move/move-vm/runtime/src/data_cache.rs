@@ -5,7 +5,7 @@
 use crate::{
     loader::{LegacyModuleStorageAdapter, Loader},
     logging::expect_no_verification_errors,
-    ModuleStorage,
+    storage::module_storage::ModuleStorage,
 };
 use bytes::Bytes;
 use move_binary_format::{
@@ -26,10 +26,10 @@ use move_core_types::{
 use move_vm_types::{
     loaded_data::runtime_types::Type,
     resolver::MoveResolver,
+    sha3_256,
     value_serde::deserialize_and_allow_delayed_values,
     values::{GlobalValue, Value},
 };
-use sha3::{Digest, Sha3_256};
 use std::{
     collections::btree_map::{self, BTreeMap},
     sync::Arc,
@@ -358,10 +358,7 @@ impl<'r> TransactionDataCache<'r> {
                         return Err(expect_no_verification_errors(err));
                     },
                 };
-
-                let mut sha3_256 = Sha3_256::new();
-                sha3_256.update(&bytes);
-                let hash_value: [u8; 32] = sha3_256.finalize().into();
+                let hash_value = sha3_256(&bytes);
 
                 // for bytes obtained from the data store, they should always deserialize and verify.
                 // It is an invariant violation if they don't.

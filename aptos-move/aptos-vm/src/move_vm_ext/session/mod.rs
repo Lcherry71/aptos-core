@@ -38,8 +38,10 @@ use move_core_types::{
     vm_status::StatusCode,
 };
 use move_vm_runtime::{
-    move_vm::MoveVM, native_extensions::NativeContextExtensions, session::Session, ModuleStorage,
-    VerifiedModuleBundle,
+    move_vm::MoveVM,
+    native_extensions::NativeContextExtensions,
+    session::Session,
+    storage::{module_storage::ModuleStorage, publishing::VerifiedModuleBundle},
 };
 use move_vm_types::{value_serde::serialize_and_allow_delayed_values, values::Value};
 use std::{

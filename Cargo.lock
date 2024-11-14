@@ -11804,6 +11804,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
+ "claims",
  "memory-stats",
  "move-binary-format",
  "move-bytecode-verifier",
@@ -11860,7 +11861,6 @@ dependencies = [
  "parking_lot 0.12.1",
  "proptest",
  "serde",
- "sha3 0.9.1",
  "triomphe",
  "typed-arena",
 ]
@@ -11875,6 +11875,7 @@ dependencies = [
  "move-bytecode-utils",
  "move-core-types",
  "move-table-extension",
+ "move-vm-runtime",
  "move-vm-types",
  "once_cell",
  "serde",
