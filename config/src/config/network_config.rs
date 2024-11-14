@@ -38,7 +38,7 @@ pub const HANDSHAKE_VERSION: u8 = 0;
 pub const NETWORK_CHANNEL_SIZE: usize = 1024;
 pub const PING_INTERVAL_MS: u64 = 10_000;
 pub const PING_TIMEOUT_MS: u64 = 20_000;
-pub const PING_FAILURES_TOLERATED: u64 = 3;
+pub const PING_FAILURES_TOLERATED: u64 = 10;
 pub const CONNECTIVITY_CHECK_INTERVAL_MS: u64 = 5000;
 pub const MAX_CONNECTION_DELAY_MS: u64 = 60_000; /* 1 minute */
 pub const MAX_FULLNODE_OUTBOUND_CONNECTIONS: usize = 6;
@@ -47,7 +47,7 @@ pub const MAX_MESSAGE_METADATA_SIZE: usize = 128 * 1024; /* 128 KiB: a buffer fo
 pub const MESSAGE_PADDING_SIZE: usize = 2 * 1024 * 1024; /* 2 MiB: a safety buffer to allow messages to get larger during serialization */
 pub const MAX_APPLICATION_MESSAGE_SIZE: usize =
     (MAX_MESSAGE_SIZE - MAX_MESSAGE_METADATA_SIZE) - MESSAGE_PADDING_SIZE; /* The message size that applications should check against */
-pub const MAX_FRAME_SIZE: usize = 4 * 1024 * 1024; /* 4 MiB large messages will be chunked into multiple frames and streamed */
+pub const MAX_FRAME_SIZE: usize = 100 * 1024; /* 100 KB large messages will be chunked into multiple frames and streamed */
 pub const MAX_MESSAGE_SIZE: usize = 64 * 1024 * 1024; /* 64 MiB */
 pub const CONNECTION_BACKOFF_BASE: u64 = 2;
 pub const IP_BYTE_BUCKET_RATE: usize = 102400 /* 100 KiB */;

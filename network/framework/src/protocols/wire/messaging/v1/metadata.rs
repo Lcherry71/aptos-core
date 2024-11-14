@@ -190,6 +190,13 @@ impl MessageMetadata {
 
     /// Marks the message as being sent over the network wire by emitting latency metrics
     pub fn mark_message_as_sending(&mut self) {
+        // If this message is a streamed message fragment, there's no need to emit
+        // any metrics (we only emit metrics for the head and tail of streamed messages).
+        if self.message_stream_type == MessageStreamType::StreamedMessageFragment {
+            return;
+        }
+
+        // Otherwise, emit the latency metrics
         if let Some(application_send_time) = self.application_send_time {
             // Calculate the application to wire send latency
             let application_to_wire_latency = application_send_time

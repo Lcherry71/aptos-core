@@ -8,6 +8,7 @@ use crate::protocols::wire::messaging::v1::{
 use anyhow::{bail, ensure};
 use aptos_channels::Sender;
 use aptos_id_generator::{IdGenerator, U32IdGenerator};
+use aptos_logger::info;
 use futures_util::SinkExt;
 #[cfg(any(test, feature = "fuzzing"))]
 use proptest_derive::Arbitrary;
@@ -165,12 +166,6 @@ impl OutboundStream {
     ) -> Self {
         // some buffer for headers
         let max_frame_size = max_frame_size - 64;
-        assert!(
-            max_frame_size * u8::MAX as usize >= max_message_size,
-            "Stream only supports maximum 255 chunks, frame size {}, message size {}",
-            max_frame_size,
-            max_message_size
-        );
         Self {
             request_id_gen: U32IdGenerator::new(),
             max_frame_size,
@@ -182,7 +177,14 @@ impl OutboundStream {
     /// Returns true iff the message should be streamed (i.e., broken into chunks)
     pub fn should_stream(&self, message_with_metadata: &NetworkMessageWithMetadata) -> bool {
         let message_length = message_with_metadata.network_message().data_len();
-        message_length > self.max_message_size
+        let result = message_length > self.max_frame_size;
+        if result {
+            info!(
+                "Message length {} exceed size limit {}, should stream: {}",
+                message_length, self.max_frame_size, result
+            );
+        }
+        result
     }
 
     pub async fn stream_message(
@@ -224,6 +226,8 @@ impl OutboundStream {
             num_chunks <= u8::MAX as usize,
             "Number of fragments overflowed"
         );
+
+        info!("Stream message with {} fragments", num_chunks + 1);
 
         // Create the stream header multiplex message
         let header_multiplex_message =
