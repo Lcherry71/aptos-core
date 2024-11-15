@@ -250,6 +250,11 @@ impl BlockTree {
         self.id_to_quorum_cert.get(block_id).cloned()
     }
 
+    pub(super) fn window_root(&self) -> Arc<PipelinedBlock> {
+        self.get_block(&self.window_root_id)
+            .expect("Window root not found")
+    }
+
     // TODO: return an error when not enough blocks?
     // TODO: how to know if the window is complete?
     /// Retrieves a Window of Recent Blocks
@@ -465,8 +470,17 @@ impl BlockTree {
             return VecDeque::new();
         }
 
+        // TODO revisit potentially...
+        // Given the commit root and the window root, use the root with the min round
+        let min_root = if self.commit_root().round() < self.window_root().round() {
+            self.linkable_root()
+        } else {
+            self.linkable_window_root()
+        };
+
         let mut blocks_pruned = VecDeque::new();
-        let mut blocks_to_be_pruned = vec![self.linkable_window_root()];
+        let mut blocks_to_be_pruned = vec![min_root];
+
         while let Some(block_to_remove) = blocks_to_be_pruned.pop() {
             block_to_remove.executed_block().abort_pipeline();
             // Add the children to the blocks to be pruned (if any), but stop when it reaches the
