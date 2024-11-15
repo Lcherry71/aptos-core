@@ -87,9 +87,9 @@ CreateObjects { num_objects: 10, object_payload_size: 0 }	6	0.940	1.026	152.1
 CreateObjects { num_objects: 10, object_payload_size: 10240 }	6	0.934	1.051	9731.3
 CreateObjects { num_objects: 100, object_payload_size: 0 }	6	0.966	1.051	1458.3
 CreateObjects { num_objects: 100, object_payload_size: 10240 }	6	0.969	1.077	11196.4
-InitializeVectorPicture { length: 40 }	6	0.973	1.066	75.0
-VectorPicture { length: 40 }	6	0.955	1.092	22.0
-VectorPictureRead { length: 40 }	6	0.952	1.047	21.0
+InitializeVectorPicture { length: 128 }	6	0.973	1.066	75.0
+VectorPicture { length: 128 }	6	0.955	1.092	22.0
+VectorPictureRead { length: 128 }	6	0.952	1.047	21.0
 InitializeVectorPicture { length: 30720 }	6	0.969	1.071	27295.8
 VectorPicture { length: 30720 }	6	0.957	1.066	6560.2
 VectorPictureRead { length: 30720 }	6	0.948	1.053	6642.8
@@ -102,78 +102,20 @@ TokenV1MintAndTransferNFTSequential	6	0.991	1.067	543.7
 TokenV2AmbassadorMint { numbered: true }	6	0.987	1.052	474.4
 LiquidityPoolSwap { is_stable: true }	6	0.970	1.042	555.4
 LiquidityPoolSwap { is_stable: false }	6	0.925	1.001	535.3
-
-
-
-(146, EntryPoints::CoinInitAndMint),
-        (154, EntryPoints::FungibleAssetMint),
-        (23, EntryPoints::IncGlobalMilestoneAggV2 {
-            milestone_every: 1,
-        }),
-        (12, EntryPoints::IncGlobalMilestoneAggV2 {
-            milestone_every: 2,
-        }),
-        (6871, EntryPoints::EmitEvents { count: 1000 }),
-        // long vectors with small elements
-        (15890, EntryPoints::VectorTrimAppend {
-            // baseline, only vector creation
-            vec_len: 3000,
-            element_len: 1,
-            index: 0,
-            repeats: 0,
-        }),
-        (38047, EntryPoints::VectorTrimAppend {
-            vec_len: 3000,
-            element_len: 1,
-            index: 100,
-            repeats: 1000,
-        }),
-        (25923, EntryPoints::VectorTrimAppend {
-            vec_len: 3000,
-            element_len: 1,
-            index: 2990,
-            repeats: 1000,
-        }),
-        (35590, EntryPoints::VectorRemoveInsert {
-            vec_len: 3000,
-            element_len: 1,
-            index: 100,
-            repeats: 1000,
-        }),
-        (28141, EntryPoints::VectorRemoveInsert {
-            vec_len: 3000,
-            element_len: 1,
-            index: 2998,
-            repeats: 1000,
-        }),
-        (53500, EntryPoints::VectorRangeMove {
-            vec_len: 3000,
-            element_len: 1,
-            index: 1000,
-            move_len: 500,
-            repeats: 1000,
-        }),
-        // vectors with large elements
-        (654, EntryPoints::VectorTrimAppend {
-            // baseline, only vector creation
-            vec_len: 100,
-            element_len: 100,
-            index: 0,
-            repeats: 0,
-        }),
-        (11147, EntryPoints::VectorTrimAppend {
-            vec_len: 100,
-            element_len: 100,
-            index: 10,
-            repeats: 1000,
-        }),
-        (5545, EntryPoints::VectorRangeMove {
-            vec_len: 100,
-            element_len: 100,
-            index: 50,
-            move_len: 10,
-            repeats: 1000,
-        }),
+CoinInitAndMint	6	0.925	1.001	146
+FungibleAssetMint	6	0.925	1.001	154
+IncGlobalMilestoneAggV2 { milestone_every: 1 }	6	0.925	1.001	23
+IncGlobalMilestoneAggV2 { milestone_every: 2 }	6	0.925	1.001	12
+EmitEvents { count: 1000 }	6	0.925	1.001	6871
+VectorTrimAppend { vec_len: 3000, element_len: 1, index: 0, repeats: 0 }	6	0.925	1.001	15890
+VectorTrimAppend { vec_len: 3000, element_len: 1, index: 100, repeats: 1000 }	6	0.925	1.001	38047
+VectorTrimAppend { vec_len: 3000, element_len: 1, index: 2990, repeats: 1000 }	6	0.925	1.001	25923
+VectorRemoveInsert { vec_len: 3000, element_len: 1, index: 100, repeats: 1000 }	6	0.925	1.001	35590
+VectorRemoveInsert { vec_len: 3000, element_len: 1, index: 2998, repeats: 1000 }	6	0.925	1.001	28141
+VectorRangeMove { vec_len: 3000, element_len: 1, index: 1000, move_len: 500, repeats: 1000 }	6	0.925	1.001	53500
+VectorTrimAppend { vec_len: 100, element_len: 100, index: 0, repeats: 0 }	6	0.925	1.001	654
+VectorTrimAppend { vec_len: 100, element_len: 100, index: 10, repeats: 1000 }	6	0.925	1.001	11147
+VectorRangeMove { vec_len: 100, element_len: 100, index: 50, move_len: 10, repeats: 1000 }	6	0.925	1.001	5545
 ";
 
 struct CalibrationInfo {
@@ -269,20 +211,20 @@ fn main() {
         },
         EntryPoints::EmitEvents { count: 1000 },
         // long vectors with small elements
-        EntryPoints::VectorSplitOffAppend {
+        EntryPoints::VectorTrimAppend {
             // baseline, only vector creation
             vec_len: 3000,
             element_len: 1,
             index: 0,
             repeats: 0,
         },
-        EntryPoints::VectorSplitOffAppend {
+        EntryPoints::VectorTrimAppend {
             vec_len: 3000,
             element_len: 1,
             index: 100,
             repeats: 1000,
         },
-        EntryPoints::VectorSplitOffAppend {
+        EntryPoints::VectorTrimAppend {
             vec_len: 3000,
             element_len: 1,
             index: 2990,
@@ -308,14 +250,14 @@ fn main() {
             repeats: 1000,
         },
         // vectors with large elements
-        EntryPoints::VectorSplitOffAppend {
+        EntryPoints::VectorTrimAppend {
             // baseline, only vector creation
             vec_len: 100,
             element_len: 100,
             index: 0,
             repeats: 0,
         },
-        EntryPoints::VectorSplitOffAppend {
+        EntryPoints::VectorTrimAppend {
             vec_len: 100,
             element_len: 100,
             index: 10,
@@ -342,7 +284,7 @@ fn main() {
         let entry_point_name = format!("{:?}", entry_point);
         let expected_time = calibration_values
             .get(&entry_point_name)
-            .unwrap()
+            .expect(&entry_point_name)
             .expected_time;
         let publisher = executor.new_account_at(AccountAddress::random());
 
