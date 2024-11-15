@@ -918,13 +918,13 @@ impl StateStore {
                             }
                         }
 
-                        let old_version_and_value_opt = if let Some((old_version, old_value_opt)) =
-                            cache.insert(key.clone(), (Some(version), value.clone()))
-                        {
-                            old_value_opt.map(|value| (old_version, value))
-                        } else {
-                            None
-                        };
+                        // n.b. all updated state items must be read and recorded in the state cache,
+                        // otherwise we can't calculate the correct usage.
+                        let (old_version, old_value_opt) = cache
+                            .insert(key.clone(), (Some(version), value.clone()))
+                            .expect("Must cache read.");
+                        let old_version_and_value_opt =
+                            old_value_opt.map(|value| (old_version, value));
 
                         if let Some((old_version, old_value)) = old_version_and_value_opt {
                             let old_version = old_version
